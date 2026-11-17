@@ -2,7 +2,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -12,7 +12,8 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
+def engine() -> Iterator[Engine]:
+    """A fresh in-memory SQLite DB per test, with foreign keys enforced."""
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -26,13 +27,30 @@ def client() -> Iterator[TestClient]:
         cursor.close()
 
     Base.metadata.create_all(engine)
-    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+@pytest.fixture
+def db(session_factory: sessionmaker[Session]) -> Iterator[Session]:
+    """A DB session for tests that call services directly (no HTTP)."""
+    with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def client(session_factory: sessionmaker[Session]) -> TestClient:
+    """An HTTP client whose requests use the same in-memory DB."""
 
     def override_get_db() -> Iterator[Session]:
-        with testing_session() as db:
-            yield db
+        with session_factory() as session:
+            yield session
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
-    engine.dispose()
+    return TestClient(app)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.config import settings
 
@@ -51,3 +51,8 @@ class KPassRead(KPassBase):
 
     id: int
     steps: list[KPassStepRead]
+
+    @computed_field
+    @property
+    def total_minutes(self) -> int:
+        return sum(step.duration_minutes for step in self.steps)
