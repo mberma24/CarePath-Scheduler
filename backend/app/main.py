@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import patients
 from app.config import settings
 from app.db.models import Base
 from app.db.session import engine
@@ -25,6 +26,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.include_router(patients.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
