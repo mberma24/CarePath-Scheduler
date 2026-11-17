@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import blocks, kpasses, patients, resources
+from app.api import blocks, kpasses, patients, resources, schedule
 from app.config import settings
 from app.db.models import Base
 from app.db.session import engine
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(resources.router)
     app.include_router(kpasses.router)
     app.include_router(blocks.router)
+    app.include_router(schedule.router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
