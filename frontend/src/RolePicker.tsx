@@ -63,7 +63,7 @@ export default function RolePicker({ value, patients, resources, onChange, onOpe
 
   return (
     <div className="role-picker" ref={ref}>
-      <span>Viewing as</span>
+      <span title="Demo role switcher, not real login. The API doesn't check roles.">Viewing as</span>
       <button className="role-button" onClick={toggle}>
         {current?.name ?? 'Admin'} <span className="muted">⌄</span>
       </button>

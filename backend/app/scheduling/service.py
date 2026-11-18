@@ -85,8 +85,10 @@ def clinic_day_windows(start: datetime, end: datetime) -> list[tuple[datetime, d
     day = start.astimezone(clinic_tz()).date()
     last_day = end.astimezone(clinic_tz()).date()
     while day <= last_day:
-        opens = datetime.combine(day, time(settings.clinic_open_hour), tzinfo=clinic_tz())
-        closes = datetime.combine(day, time(settings.clinic_close_hour), tzinfo=clinic_tz())
+        # Wall-clock hours after the clinic's midnight (so a close hour of 24 is midnight)
+        midnight = datetime.combine(day, time.min, tzinfo=clinic_tz())
+        opens = midnight + timedelta(hours=settings.clinic_open_hour)
+        closes = midnight + timedelta(hours=settings.clinic_close_hour)
         window_start = ceil_to_slot(max(start, opens.astimezone(UTC)))
         window_end = floor_to_slot(min(end, closes.astimezone(UTC)))
         if window_end > window_start:
@@ -122,6 +124,12 @@ def find_earliest_schedule(
     # 2. Reject K-passes that can never fit.
     if not kpass.steps:
         raise ValueError("K-pass has no steps")
+    for step in kpass.steps:  # e.g. a 45-min step saved before SLOT_MINUTES changed to 30
+        if step.duration_minutes % settings.slot_minutes:
+            raise ValueError(
+                f"Step '{step.name}' ({step.duration_minutes} min) isn't a multiple of the "
+                f"{settings.slot_minutes}-minute slot; edit the K-pass"
+            )
     total_minutes = sum(step.duration_minutes for step in kpass.steps)
     day_minutes = (settings.clinic_close_hour - settings.clinic_open_hour) * 60
     if total_minutes > day_minutes:

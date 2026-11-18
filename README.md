@@ -62,12 +62,17 @@ Backend settings come from `backend/.env` (or environment variables):
 | `CLINIC_CLOSE_HOUR`     | `19`                 | Appointments must finish by this hour         |
 | `CLINIC_TIMEZONE`       | `America/New_York`   | Timezone for "today" and clinic hours         |
 
-The frontend reads these from `GET /config`.
+The frontend reads these from `GET /config`. Settings are checked at startup, so a bad
+value fails right away with a clear message: the slot must divide an hour evenly (5, 10,
+15, 30, …), hours are whole hours with open before close (a close hour of `24` means
+midnight), the horizon is at least 1 day, and the timezone must exist. If you change
+`SLOT_MINUTES`, a step saved with a duration that is no longer a multiple of it gives a
+422 telling you to edit that K-pass, instead of being silently shortened.
 
 ### Tests and lint
 
 ```bash
-cd backend && pytest && ruff check .     # 221 tests
+cd backend && pytest && ruff check .     # 234 tests
 cd frontend && npm run lint
 ```
 
@@ -198,9 +203,13 @@ Interactive docs are at `http://localhost:8000/docs`.
   moves steps to temporary negative positions first, so it never breaks the constraint.
 - **The engine is pure.** `engine.py` knows only about slots and 0/1 rows, which makes it
   easy to test. `service.py` turns database rows into that matrix and back into times.
-- **UTC everywhere.** Times are stored as UTC. SQLite drops the timezone, so it is put back
-  when reading. The API needs times with an offset. "Today" is calculated in the clinic's
-  timezone (`CLINIC_TIMEZONE`, default `America/New_York`).
+- **UTC everywhere, clinic time on screen.** Times are stored and sent as UTC. SQLite drops
+  the timezone, so it is put back when reading. The API needs times with an offset.
+  "Today", clinic hours, and the horizon use the clinic's timezone (`CLINIC_TIMEZONE`,
+  default `America/New_York`). The frontend also shows and picks every date and time in
+  the clinic's timezone (from `GET /config`, converted with the browser's `Intl` API in
+  `time.ts`), so the UI is correct whatever timezone the browser or the clinic is in,
+  including on daylight saving days.
 - **Bookings are just blocks.** A booked appointment is a set of blocks with a reason like
   "Bone Scan - Ann Patel", so the scheduler treats it like any other busy time.
 - **A simple frontend.** No router or state library: one page, three tabs, `useState`,
@@ -232,9 +241,11 @@ current day.
   themselves, and staff/equipment see their own schedule and can edit K-passes. The API
   does **not** enforce roles; anyone who calls it directly can do everything (see Future
   work for the real design).
-- **The browser's timezone.** The frontend shows and picks times in the browser's timezone.
-  This matches the backend's clinic-day logic as long as the browser is in the clinic's
-  timezone.
+- **Not for real patient data.** There is no authentication or authorization in the API,
+  so don't deploy it publicly or use it with real patient information.
+- **Bookings can't be cancelled as a unit.** A booking is a set of separate blocks
+  (patient plus each resource). Deleting one of them frees only that block and leaves the
+  rest in place. Cancelling or moving a booking as a whole is future work.
 - **No migrations.** Tables are created on startup. After a schema change, run
   `python -m app.seed --reset` or delete `kpass_scheduler.db`.
 - **Concurrent bookings.** Booking checks the slot and inserts its blocks in one

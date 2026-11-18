@@ -237,6 +237,15 @@ def test_clinic_hours_follow_daylight_saving():
     ]
 
 
+def test_step_not_a_multiple_of_the_slot_raises(db, monkeypatch):
+    # A 45-minute step saved earlier must not silently become 30 minutes after a slot change.
+    patient = make_patient(db)
+    kpass = make_kpass(db, (45, None))
+    monkeypatch.setattr(settings, "slot_minutes", 30)
+    with pytest.raises(ValueError, match=r"Step 'Step 0' \(45 min\) isn't a multiple"):
+        schedule(db, kpass, patient)
+
+
 def test_kpass_longer_than_a_clinic_day_raises(db):
     patient = make_patient(db)
     kpass = make_kpass(db, (12 * 60 + 15, None))

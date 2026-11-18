@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import { SLOT_MINUTES, formatTime, isoToMinute, minuteToIso } from './time'
+import { SLOT_MINUTES, formatTime, isPast, isoToMinute, minuteToIso } from './time'
 
 export interface TimelineItem {
   id: number | string
@@ -16,14 +16,24 @@ interface Props {
   onSlotPress?: (minute: number) => void // mouse pressed on a row
   onSlotEnter?: (minute: number) => void // mouse moved onto a row
   fit?: boolean // only show the hours the items cover
+  lockPast?: boolean // rows that have already ended are greyed out and can't be selected
   hours?: [number, number] // otherwise show these hours (default: the whole day)
 }
 
 const ROW_PX = 20 // must match .timeline-row height
 
-// A vertical day view in 15-minute rows. Shows `hours` (default the whole day), or with
+// A vertical day view, one row per slot (SLOT_MINUTES). Shows `hours` (default the whole day), or with
 // `fit` only the hours the items cover.
-export default function Timeline({ date, items, selection, onSlotPress, onSlotEnter, fit = false, hours = [0, 24] }: Props) {
+export default function Timeline({
+  date,
+  items,
+  selection,
+  onSlotPress,
+  onSlotEnter,
+  fit = false,
+  hours = [0, 24],
+  lockPast = false,
+}: Props) {
   let first = hours[0] * 60
   let last = hours[1] * 60
   if (fit && items.length) {
@@ -59,16 +69,18 @@ export default function Timeline({ date, items, selection, onSlotPress, onSlotEn
     <div className="timeline-scroll" ref={scrollRef}>
     <div className="timeline">
       {slots.map((m) => {
+        const past = lockPast && isPast(minuteToIso(date, m + SLOT_MINUTES))
         const classes = ['timeline-row']
         if (m % 60 === 0) classes.push('hour')
-        if (onSlotPress) classes.push('clickable')
+        if (past) classes.push('past')
+        else if (onSlotPress) classes.push('clickable')
         if (selection && m >= selection.start && m < selection.end) classes.push('selected')
         return (
           <div
             key={m}
             className={classes.join(' ')}
-            onMouseDown={onSlotPress && (() => onSlotPress(m))}
-            onMouseEnter={onSlotEnter && (() => onSlotEnter(m))}
+            onMouseDown={past ? undefined : onSlotPress && (() => onSlotPress(m))}
+            onMouseEnter={past ? undefined : onSlotEnter && (() => onSlotEnter(m))}
           >
             {m % 60 === 0 && <span className="timeline-label">{formatTime(minuteToIso(date, m))}</span>}
           </div>

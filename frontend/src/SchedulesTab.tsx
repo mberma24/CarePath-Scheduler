@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as api from './api'
 import Timeline from './Timeline'
-import { SLOT_MINUTES, dayRange, formatTime, isoToMinute, minuteToIso, toDateInput } from './time'
+import { SLOT_MINUTES, dayRange, formatTime, isoToMinute, minuteToIso, toDateInput, todayInput } from './time'
 import type { Block, Patient, Resource } from './types'
 
 interface Owner {
@@ -221,9 +221,12 @@ export default function SchedulesTab({ lockedOwner, hours }: Props) {
                 )}
                 <input
                   type="date"
+                  min={todayInput()}
                   value={date}
                   onChange={(e) => {
-                    setDate(e.target.value)
+                    // Past days can't be picked (a typed one snaps to today)
+                    const today = todayInput()
+                    setDate(e.target.value && e.target.value < today ? today : e.target.value)
                     clearSelection()
                   }}
                 />
@@ -232,6 +235,7 @@ export default function SchedulesTab({ lockedOwner, hours }: Props) {
               <Timeline
                 date={date}
                 hours={hours}
+                lockPast
                 selection={selection}
                 onSlotPress={pressSlot}
                 onSlotEnter={dragOverSlot}

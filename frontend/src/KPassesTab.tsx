@@ -4,7 +4,7 @@ import type { StepInput } from './api'
 import { SLOT_MINUTES } from './time'
 import type { KPass, KPassStep, Resource } from './types'
 
-// Round to the nearest slot (15 min), between one slot and a clinic day, matching the backend
+// Round to the nearest slot (SLOT_MINUTES), between one slot and a clinic day, matching the backend
 function snapMinutes(value: number, max: number): number {
   const snapped = Math.round(value / SLOT_MINUTES) * SLOT_MINUTES
   return Number.isFinite(snapped) ? Math.min(max, Math.max(SLOT_MINUTES, snapped)) : SLOT_MINUTES
@@ -148,10 +148,10 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
         <span className="muted" style={{ marginRight: 8 }}>
           Total: {kpass.total_minutes} min
         </span>
-        <button disabled={!name.trim() || name === kpass.name} onClick={() => save(() => api.renameKPass(kpass.id, name))}>
+        <button className="dark" disabled={!name.trim() || name === kpass.name} onClick={() => save(() => api.renameKPass(kpass.id, name))}>
           Rename
         </button>
-        <button className="danger" onClick={onDelete}>
+        <button className="danger-solid" onClick={onDelete}>
           Delete K-pass
         </button>
       </div>

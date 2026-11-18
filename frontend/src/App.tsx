@@ -4,6 +4,7 @@ import FindTab from './FindTab'
 import KPassesTab from './KPassesTab'
 import RolePicker from './RolePicker'
 import SchedulesTab from './SchedulesTab'
+import { applyClinicSettings } from './time'
 import type { Config, Patient, Resource } from './types'
 
 type Tab = 'kpasses' | 'schedules' | 'find'
@@ -38,8 +39,19 @@ export default function App() {
   const [resources, setResources] = useState<Resource[]>([])
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG)
 
+  const [configLoaded, setConfigLoaded] = useState(false)
+  const [configError, setConfigError] = useState(false)
+
+  // Load settings first: all dates and times are shown in the clinic's timezone
   useEffect(() => {
-    api.getConfig().then(setConfig).catch(() => {}) // keep the defaults if it fails
+    api
+      .getConfig()
+      .then((c) => {
+        applyClinicSettings(c.clinic_timezone, c.slot_minutes)
+        setConfig(c)
+      })
+      .catch(() => setConfigError(true)) // fall back to the defaults, but say so
+      .finally(() => setConfigLoaded(true))
   }, [])
 
   const loadPeople = useCallback(() => {
@@ -85,14 +97,21 @@ export default function App() {
 
       {/* key={role}: switching roles starts each tab fresh */}
       <main key={role}>
-        {tab === 'kpasses' && <KPassesTab dayMinutes={(config.clinic_close_hour - config.clinic_open_hour) * 60} />}
-        {tab === 'schedules' && (
+        {!configLoaded && <p className="muted">Loading…</p>}
+        {configError && (
+          <p className="error">
+            Couldn't load clinic settings from the server, so default hours and timezone are used.
+            Times may be wrong; check that the backend is running and reload.
+          </p>
+        )}
+        {configLoaded && tab === 'kpasses' && <KPassesTab dayMinutes={(config.clinic_close_hour - config.clinic_open_hour) * 60} />}
+        {configLoaded && tab === 'schedules' && (
           <SchedulesTab
             lockedOwner={role === 'admin' ? undefined : role}
             hours={[config.clinic_open_hour, config.clinic_close_hour]}
           />
         )}
-        {tab === 'find' && <FindTab config={config} lockedPatientId={role.startsWith('patient:') ? Number(role.split(':')[1]) : undefined} />}
+        {configLoaded && tab === 'find' && <FindTab config={config} lockedPatientId={role.startsWith('patient:') ? Number(role.split(':')[1]) : undefined} />}
       </main>
     </div>
   )

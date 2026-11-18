@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import * as api from './api'
 import Timeline from './Timeline'
-import { SLOT_MINUTES, addDays, dayRange, formatDay, formatTime, isPast, toDateInput, todayInput, toTimeInput } from './time'
+import { SLOT_MINUTES, addDays, clinicDateTime, dayRange, formatDay, formatTime, isPast, nowTimeInput, toDateInput, todayInput, toTimeInput } from './time'
 import type { Config, KPass, Patient, Resource, ScheduleResponse } from './types'
 
 interface Props {
@@ -36,7 +36,7 @@ export default function FindTab({ config, lockedPatientId }: Props) {
   // Search from the chosen date/time (never before now) through the last day of the horizon,
   // counted in calendar days: a 7-day horizon from Nov 18 searches Nov 18-24.
   // The backend keeps every appointment inside clinic hours.
-  const chosenStart = new Date(`${date}T${time || '00:00'}`)
+  const chosenStart = clinicDateTime(date, time)
   const lastDay = addDays(date, config.schedule_horizon_days - 1)
   const searchEnd = dayRange(lastDay).end
   const dayOver = isPast(searchEnd)
@@ -74,7 +74,8 @@ export default function FindTab({ config, lockedPatientId }: Props) {
     setError('')
     setLoading(true)
     try {
-      await api.bookSchedule(Number(kpassId), Number(patientId), result.start_time)
+      // Show what was actually booked (the K-pass may have changed since the search)
+      setResult(await api.bookSchedule(Number(kpassId), Number(patientId), result.start_time))
       setBooked(true)
     } catch (e) {
       setError((e as Error).message)
@@ -125,16 +126,23 @@ export default function FindTab({ config, lockedPatientId }: Props) {
             min={todayInput()}
             value={date}
             onChange={(e) => {
-              setDate(e.target.value)
+              // Past days can't be picked (a typed one snaps to today); on today, the time
+              // can't be earlier than now
+              const today = todayInput()
+              const picked = e.target.value && e.target.value < today ? today : e.target.value
+              setDate(picked)
+              if (picked === today && time < nowTimeInput()) setTime(nowTimeInput())
               setResult(null)
             }}
           />
           <input
             type="time"
             style={{ flex: 1, minWidth: 0 }}
+            min={date === todayInput() ? nowTimeInput() : undefined}
             value={time}
             onChange={(e) => {
-              setTime(e.target.value)
+              const earliest = date === todayInput() ? nowTimeInput() : '00:00'
+              setTime(e.target.value && e.target.value < earliest ? earliest : e.target.value)
               setResult(null)
             }}
           />
