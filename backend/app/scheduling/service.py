@@ -110,7 +110,8 @@ def find_earliest_schedule(
     (SCHEDULE_HORIZON_DAYS, counted from the start's day). Never searches the past.
     Appointments stay inside clinic hours, so the search runs one clinic day at a time
     and returns the first day that fits. Returns None if no day has a slot.
-    Raises ValueError if the K-pass has no steps or can't fit in any day of the window.
+    Raises ValueError only for requests that can never work: no steps, a K-pass longer
+    than a clinic day, or a type with no resources.
     """
     now = as_utc(now or datetime.now(UTC))
 
@@ -128,20 +129,14 @@ def find_earliest_schedule(
             f"K-pass ({total_minutes} min) is longer than a clinic day ({day_minutes} min)"
         )
 
+    for resource_type in {step.resource_type for step in kpass.steps if step.resource_type}:
+        if db.scalar(select(Resource.id).where(Resource.type == resource_type).limit(1)) is None:
+            raise ValueError(f"No resources of type '{resource_type}'")
+
     # 3. One search per clinic day; days with too little time left are skipped.
+    #    If no day has room, that's "no slot" (None), not an error.
     total = timedelta(minutes=total_minutes)
     windows = [(s, e) for s, e in clinic_day_windows(search_start, search_end) if e - s >= total]
-    if not windows:
-        longest = max(
-            (
-                int((e - s).total_seconds() // 60)
-                for s, e in clinic_day_windows(search_start, search_end)
-            ),
-            default=0,
-        )
-        raise ValueError(
-            f"K-pass ({total_minutes} min) is longer than the search window ({longest} min)"
-        )
     for window_start, window_end in windows:
         result = search_window(db, kpass, patient, window_start, window_end)
         if result is not None:
@@ -288,6 +283,8 @@ def book_schedule(
     start = as_utc(start)
     if start != floor_to_slot(start):
         raise ValueError("start must be on a slot boundary")
+    if start < as_utc(now or datetime.now(UTC)):
+        raise ValueError("That time has already passed. Search again.")
     total = timedelta(minutes=sum(step.duration_minutes for step in kpass.steps))
     result = find_earliest_schedule(db, kpass, patient, start=start, end=start + total, now=now)
     if result is None or result.start_time != start:

@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as api from './api'
 import type { StepInput } from './api'
 import { SLOT_MINUTES } from './time'
 import type { KPass, KPassStep, Resource } from './types'
 
-// Round to the nearest slot (15 min), between one slot and 24 hours, matching the backend
-function snapMinutes(value: number): number {
+// Round to the nearest slot (15 min), between one slot and a clinic day, matching the backend
+function snapMinutes(value: number, max: number): number {
   const snapped = Math.round(value / SLOT_MINUTES) * SLOT_MINUTES
-  return Number.isFinite(snapped) ? Math.min(24 * 60, Math.max(SLOT_MINUTES, snapped)) : SLOT_MINUTES
+  return Number.isFinite(snapped) ? Math.min(max, Math.max(SLOT_MINUTES, snapped)) : SLOT_MINUTES
 }
 
-export default function KPassesTab() {
+// dayMinutes: length of a clinic day; no step (or K-pass) can be longer
+export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
   const [kpasses, setKPasses] = useState<KPass[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -97,6 +98,7 @@ export default function KPassesTab() {
             key={selected.id}
             kpass={selected}
             resources={resources}
+            dayMinutes={dayMinutes}
             run={run}
             onChange={replace}
             onDelete={() => remove(selected.id)}
@@ -114,17 +116,22 @@ export default function KPassesTab() {
 interface EditorProps {
   kpass: KPass
   resources: Resource[]
+  dayMinutes: number
   run: <T>(fn: () => Promise<T>) => Promise<T | undefined>
   onChange: (kpass: KPass) => void
   onDelete: () => void
 }
 
-function KPassEditor({ kpass, resources, run, onChange, onDelete }: EditorProps) {
+function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: EditorProps) {
   const [name, setName] = useState(kpass.name)
 
-  async function save(fn: () => Promise<KPass>) {
-    const updated = await run(fn)
-    if (updated) onChange(updated)
+  // Saves run one after another, so a step's auto-save and a quick ↑/↓ can't answer out of order
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  function save(fn: () => Promise<KPass>) {
+    queue.current = queue.current.then(async () => {
+      const updated = await run(fn)
+      if (updated) onChange(updated)
+    })
   }
 
   function move(index: number, delta: number) {
@@ -167,6 +174,7 @@ function KPassEditor({ kpass, resources, run, onChange, onDelete }: EditorProps)
                 index={i}
                 step={step}
                 resources={resources}
+                dayMinutes={dayMinutes}
                 isFirst={i === 0}
                 isLast={i === kpass.steps.length - 1}
                 onMove={(delta) => move(i, delta)}
@@ -177,6 +185,7 @@ function KPassEditor({ kpass, resources, run, onChange, onDelete }: EditorProps)
             <StepRow
               key={`new-${kpass.steps.length}`}
               resources={resources}
+              dayMinutes={dayMinutes}
               onSave={(input) => save(() => api.addStep(kpass.id, input))}
             />
           </tbody>
@@ -190,6 +199,7 @@ interface StepRowProps {
   step?: KPassStep
   index?: number
   resources: Resource[]
+  dayMinutes: number
   isFirst?: boolean
   isLast?: boolean
   onMove?: (delta: number) => void
@@ -198,7 +208,7 @@ interface StepRowProps {
 }
 
 // One editable step; with no `step` it is the "add step" row
-function StepRow({ step, index, resources, isFirst, isLast, onMove, onSave, onDelete }: StepRowProps) {
+function StepRow({ step, index, resources, dayMinutes, isFirst, isLast, onMove, onSave, onDelete }: StepRowProps) {
   const [name, setName] = useState(step?.name ?? '')
   // Text, so the box can be blank while typing; snapped to a number when the box is left
   const [minutes, setMinutes] = useState(String(step?.duration_minutes ?? 30))
@@ -212,7 +222,7 @@ function StepRow({ step, index, resources, isFirst, isLast, onMove, onSave, onDe
     const [kind, value] = selected.split(/:(.*)/)
     return {
       name: name.trim(),
-      duration_minutes: snapMinutes(Number(minutes)),
+      duration_minutes: snapMinutes(Number(minutes), dayMinutes),
       resource_id: kind === 'id' ? Number(value) : null,
       resource_type: kind === 'type' ? value : null,
     }
@@ -257,7 +267,7 @@ function StepRow({ step, index, resources, isFirst, isLast, onMove, onSave, onDe
           value={minutes}
           onChange={(e) => setMinutes(e.target.value)}
           onBlur={() => {
-            setMinutes(String(snapMinutes(Number(minutes))))
+            setMinutes(String(snapMinutes(Number(minutes), dayMinutes)))
             autoSave()
           }}
           onKeyDown={saveOnEnter}

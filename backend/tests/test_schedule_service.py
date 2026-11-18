@@ -244,12 +244,12 @@ def test_kpass_longer_than_a_clinic_day_raises(db):
         schedule(db, kpass, patient)
 
 
-def test_kpass_longer_than_window_raises(db):
-    # 18:00 in New York leaves 60 minutes until closing.
+def test_no_day_with_enough_room_returns_none(db):
+    # 18:00 in New York leaves 60 minutes until closing, and the horizon is 1 day:
+    # that is "no slot", not an error (e.g. pressing Next slot at the end of the range).
     patient = make_patient(db)
     kpass = make_kpass(db, (60, None), (60, None))
-    with pytest.raises(ValueError, match=r"K-pass \(120 min\) is longer than the search window"):
-        schedule(db, kpass, patient, now=utc(23, 0))
+    assert schedule(db, kpass, patient, now=utc(23, 0)) is None
 
 
 # ---------- Booking ----------
@@ -264,6 +264,13 @@ def test_booking_a_start_that_has_passed_books_nothing(db):
     assert db.scalars(select(Block)).all() == []
 
 
+def test_booking_a_passed_start_says_so(db):
+    patient = make_patient(db)
+    kpass = make_kpass(db, (30, None))
+    with pytest.raises(ValueError, match="already passed"):
+        book_schedule(db, kpass, patient, utc(14, 0), now=NOW)
+
+
 def test_booking_books_exactly_the_requested_start(db):
     patient = make_patient(db)
     kpass = make_kpass(db, (30, None))
@@ -274,8 +281,7 @@ def test_booking_books_exactly_the_requested_start(db):
 def test_booking_outside_clinic_hours_books_nothing(db):
     patient = make_patient(db)
     kpass = make_kpass(db, (30, None))
-    with pytest.raises(ValueError):
-        book_schedule(db, kpass, patient, utc(2, 0, day=19), now=NOW)  # 21:00 New York
+    assert book_schedule(db, kpass, patient, utc(2, 0, day=19), now=NOW) is None  # 21:00 NY
     assert db.scalars(select(Block)).all() == []
 
 
@@ -373,10 +379,12 @@ def test_type_step_all_resources_blocked_returns_none(db):
     assert schedule(db, kpass, patient, end=utc(16, 0)) is None
 
 
-def test_type_with_no_resources_returns_none(db):
+def test_type_with_no_resources_raises(db):
+    # Explains why nothing can be found, instead of a silent "no slot".
     patient = make_patient(db)
     kpass = make_kpass(db, (30, "scanner"))
-    assert schedule(db, kpass, patient) is None
+    with pytest.raises(ValueError, match="No resources of type 'scanner'"):
+        schedule(db, kpass, patient)
 
 
 def test_type_step_mixed_with_specific_resource(db):

@@ -85,7 +85,7 @@ export default function App() {
 
       {/* key={role}: switching roles starts each tab fresh */}
       <main key={role}>
-        {tab === 'kpasses' && <KPassesTab />}
+        {tab === 'kpasses' && <KPassesTab dayMinutes={(config.clinic_close_hour - config.clinic_open_hour) * 60} />}
         {tab === 'schedules' && (
           <SchedulesTab
             lockedOwner={role === 'admin' ? undefined : role}

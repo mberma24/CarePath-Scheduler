@@ -4,7 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 from app.config import settings
 
-MAX_STEP_MINUTES = 24 * 60
+# A K-pass must fit in one clinic day, so no step (or K-pass) can be longer than that
+CLINIC_DAY_MINUTES = (settings.clinic_close_hour - settings.clinic_open_hour) * 60
+MAX_STEP_MINUTES = CLINIC_DAY_MINUTES
 
 
 class KPassStepBase(BaseModel):

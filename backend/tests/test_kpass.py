@@ -1,5 +1,7 @@
 import pytest
 
+from app.schemas.kpass import MAX_STEP_MINUTES
+
 
 def create_kpass(client, name="Bone Scan"):
     response = client.post("/kpasses", json={"name": name})
@@ -176,8 +178,8 @@ def test_add_step_position_past_end_appends(client):
 
 
 def test_add_step_accepts_max_duration(client):
-    kpass = add_step(client, create_kpass(client)["id"], duration_minutes=24 * 60)
-    assert kpass["steps"][0]["duration_minutes"] == 24 * 60
+    kpass = add_step(client, create_kpass(client)["id"], duration_minutes=MAX_STEP_MINUTES)
+    assert kpass["steps"][0]["duration_minutes"] == MAX_STEP_MINUTES
 
 
 @pytest.mark.parametrize(
@@ -186,7 +188,7 @@ def test_add_step_accepts_max_duration(client):
         pytest.param({"name": "A", "duration_minutes": 0}, id="zero-duration"),
         pytest.param({"name": "A", "duration_minutes": -15}, id="negative-duration"),
         pytest.param({"name": "A", "duration_minutes": 20}, id="not-slot-multiple"),
-        pytest.param({"name": "A", "duration_minutes": 24 * 60 + 15}, id="over-24-hours"),
+        pytest.param({"name": "A", "duration_minutes": MAX_STEP_MINUTES + 15}, id="over-max"),
         pytest.param({"name": "", "duration_minutes": 15}, id="empty-name"),
         pytest.param({"name": "A"}, id="missing-duration"),
         pytest.param({"duration_minutes": 15}, id="missing-name"),
@@ -413,3 +415,37 @@ def test_update_step_switches_from_resource_to_type(client):
     assert response.status_code == 200, response.text
     step = response.json()["steps"][0]
     assert (step["resource_id"], step["resource_type"]) == (None, "doctor")
+
+
+# ---------- A K-pass must fit in one clinic day ----------
+
+
+def test_add_step_that_makes_kpass_longer_than_a_clinic_day_returns_422(client):
+    kpass = add_step(client, create_kpass(client)["id"], duration_minutes=MAX_STEP_MINUTES)
+    body = {"name": "Extra", "duration_minutes": 15}
+
+    response = client.post(f"/kpasses/{kpass['id']}/steps", json=body)
+
+    assert response.status_code == 422
+    assert "longer than a clinic day" in response.json()["detail"]
+
+
+def test_update_step_that_makes_kpass_too_long_returns_422(client):
+    kpass = add_step(client, create_kpass(client)["id"], duration_minutes=60)
+    kpass = add_step(client, kpass["id"], duration_minutes=60)
+    step_id = kpass["steps"][0]["id"]
+    body = {"name": "Step", "duration_minutes": MAX_STEP_MINUTES}
+
+    response = client.put(f"/kpasses/{kpass['id']}/steps/{step_id}", json=body)
+
+    assert response.status_code == 422
+
+
+def test_update_step_within_a_clinic_day_is_allowed(client):
+    kpass = add_step(client, create_kpass(client)["id"], duration_minutes=MAX_STEP_MINUTES)
+    step_id = kpass["steps"][0]["id"]
+    body = {"name": "Step", "duration_minutes": MAX_STEP_MINUTES - 15}
+
+    response = client.put(f"/kpasses/{kpass['id']}/steps/{step_id}", json=body)
+
+    assert response.status_code == 200, response.text

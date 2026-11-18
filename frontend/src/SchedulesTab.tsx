@@ -66,10 +66,16 @@ export default function SchedulesTab({ lockedOwner, hours }: Props) {
     const [kind, id] = ownerKey.split(':')
     if (!id || !date) return
     const { start, end } = dayRange(date)
+    let stale = false // set when the person or date changes before this request answers
     api
       .listBlocks({ [`${kind}_id`]: Number(id), start, end })
-      .then(setBlocks)
+      .then((list) => {
+        if (!stale) setBlocks(list)
+      })
       .catch((e: Error) => setError(e.message))
+    return () => {
+      stale = true
+    }
   }, [ownerKey, date])
 
   async function run(fn: () => Promise<void>) {

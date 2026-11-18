@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models import KPass, KPassStep, Resource
 from app.db.session import DbSession
 from app.schemas.kpass import (
+    CLINIC_DAY_MINUTES,
     KPassCreate,
     KPassRead,
     KPassStepCreate,
@@ -42,6 +43,20 @@ def ensure_resource_type_exists(db: Session, resource_type: str | None) -> None:
     ):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, f"No resources of type '{resource_type}'"
+        )
+
+
+def kpass_total(kpass: KPass) -> int:
+    return sum(step.duration_minutes for step in kpass.steps)
+
+
+def ensure_fits_clinic_day(total_minutes: int) -> None:
+    """A K-pass longer than a clinic day could never be scheduled, so reject it up front."""
+    if total_minutes > CLINIC_DAY_MINUTES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"K-pass would be {total_minutes} min, longer than a clinic day "
+            f"({CLINIC_DAY_MINUTES} min)",
         )
 
 
@@ -104,6 +119,7 @@ def add_step(kpass_id: int, payload: KPassStepCreate, db: DbSession) -> KPass:
     kpass = get_kpass_or_404(db, kpass_id)
     ensure_resource_exists(db, payload.resource_id)
     ensure_resource_type_exists(db, payload.resource_type)
+    ensure_fits_clinic_day(kpass_total(kpass) + payload.duration_minutes)
 
     num_steps = len(kpass.steps)
     index = num_steps if payload.position is None else min(payload.position, num_steps)
@@ -124,6 +140,7 @@ def update_step(kpass_id: int, step_id: int, payload: KPassStepUpdate, db: DbSes
     step = get_step_or_404(db, kpass, step_id)
     ensure_resource_exists(db, payload.resource_id)
     ensure_resource_type_exists(db, payload.resource_type)
+    ensure_fits_clinic_day(kpass_total(kpass) - step.duration_minutes + payload.duration_minutes)
 
     for field, value in payload.model_dump().items():
         setattr(step, field, value)

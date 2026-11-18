@@ -104,11 +104,11 @@ def test_kpass_without_steps_returns_422(client):
     assert response.json()["detail"] == "K-pass has no steps"
 
 
-def test_kpass_longer_than_window_returns_422(client):
+def test_window_too_short_for_kpass_returns_not_found(client):
     patient, kpass = make_patient_and_kpass(client, (45, None))
     response = find(client, patient, kpass, end="2099-01-05T14:30:00Z")
-    assert response.status_code == 422
-    assert "longer than the search window" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["found"] is False
 
 
 @pytest.mark.parametrize(

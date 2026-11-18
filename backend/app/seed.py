@@ -81,7 +81,8 @@ def seed(db: Session, now: datetime) -> None:
 
     def at(day: int, minute: int) -> datetime:
         midnight = datetime.combine(today + timedelta(days=day), time.min, tzinfo=clinic_tz)
-        return midnight + timedelta(minutes=minute)
+        # Store UTC: SQLite drops the offset, so a New York time would be read back as UTC
+        return (midnight + timedelta(minutes=minute)).astimezone(UTC)
 
     blocks: list[Block] = []
     taken: dict[int, list[tuple[datetime, datetime]]] = {}  # owner -> its block times
@@ -110,6 +111,14 @@ def seed(db: Session, now: datetime) -> None:
     scanner_reasons = ["Booked scan", "Calibration", "Maintenance", "Cleaning"]
     patient_reasons = ["Work", "School pickup", "Other appointment", "Travel", "Unavailable"]
 
+    # Fully booked case: Hana Novak only has 1-hour gaps (10-11 and 15-16) for the whole
+    # search horizon, so Bone Scan (165 min) and Cardiac Stress Test (150 min) never fit
+    # for her, while short K-passes like Follow-up (30 min) still can.
+    hana = patients[-1]
+    for day in range(settings.schedule_horizon_days):
+        for start, end in [(7, 10), (11, 15), (16, 19)]:
+            add_block(hana, at(day, start * 60), at(day, end * 60), "Busy")
+
     for day in range(3):
         for person in staff:  # staggered lunch breaks, placed first
             start = 12 * 60 + rng.choice([-30, 0, 30])
@@ -118,6 +127,8 @@ def seed(db: Session, now: datetime) -> None:
             reasons = scanner_reasons if resource.type == "scanner" else staff_reasons
             add_random_blocks(resource, rng.randint(8, 12), [30, 45, 60, 90, 120], reasons, day)
         for patient in patients:
+            if patient is hana:
+                continue  # keep her 1-hour gaps open
             add_random_blocks(patient, rng.randint(3, 5), [30, 60, 90, 120], patient_reasons, day)
 
     db.add_all([*resources, *patients, bone_scan, follow_up, cardiac, *blocks])

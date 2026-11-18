@@ -47,7 +47,7 @@ export default function FindTab({ config, lockedPatientId }: Props) {
   const noSteps = kpass !== undefined && kpass.steps.length === 0
 
   const resourceName = (id: number | null) =>
-    id === null ? 'Patient only' : (resources.find((r) => r.id === id)?.name ?? `#${id}`)
+    id === null ? '' : (resources.find((r) => r.id === id)?.name ?? `#${id}`)
 
   // `next`: search again starting one slot after the current result's start
   async function find(next = false) {
@@ -147,11 +147,6 @@ export default function FindTab({ config, lockedPatientId }: Props) {
           {loading ? 'Searching…' : 'Find earliest'}
         </button>
 
-        <span className="muted">
-          Searches {formatDay(`${date}T12:00`)}
-          {config.schedule_horizon_days > 1 && ` – ${formatDay(`${lastDay}T12:00`)}`}, {config.clinic_open_hour}:00–
-          {config.clinic_close_hour}:00
-        </span>
         {tooLong && (
           <p className="error">
             This K-pass takes {kpass.total_minutes} min, longer than a clinic day ({dayMinutes} min).
@@ -165,7 +160,10 @@ export default function FindTab({ config, lockedPatientId }: Props) {
       <div className="panel">
         {!result && <p className="muted">Choose a K-pass and a patient, then search.</p>}
         {result && !result.found && (
-          <p>{searchedNext ? 'No later slot is available in the search range.' : 'No slot is available in the search range.'}</p>
+          <p>
+            {searchedNext ? 'No later slot is available' : 'No slot is available'} in the next{' '}
+            {config.schedule_horizon_days === 1 ? 'day' : `${config.schedule_horizon_days} days`}.
+          </p>
         )}
         {result?.found && result.start_time && result.end_time && (
           <>
@@ -199,7 +197,8 @@ export default function FindTab({ config, lockedPatientId }: Props) {
                   <>
                     <span>{s.name}</span>
                     <span className="muted">
-                      {resourceName(s.resource_id)} · {formatTime(s.start_time)}–{formatTime(s.end_time)}
+                      {s.resource_id !== null && `${resourceName(s.resource_id)}, `}
+                      {formatTime(s.start_time)}–{formatTime(s.end_time)}
                     </span>
                   </>
                 ),

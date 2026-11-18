@@ -67,7 +67,7 @@ The frontend reads these from `GET /config`.
 ### Tests and lint
 
 ```bash
-cd backend && pytest && ruff check .     # 215 tests
+cd backend && pytest && ruff check .     # 221 tests
 cd frontend && npm run lint
 ```
 
@@ -119,8 +119,8 @@ All times are split into **15-minute slots** (`SLOT_MINUTES`, configurable).
    search below once per clinic day, in order, and returns the first day with a slot. Each
    day's opening and closing times are built in the clinic's timezone and then converted
    to UTC, so daylight saving changes are handled. Days with too little time left are
-   skipped. A K-pass longer than a clinic day (or than every day's window) is rejected
-   with a 422. `engine.py` is unchanged; the day loop lives in `service.py`.
+   skipped; if no day has room, the answer is `found: false` (for example, pressing
+   **Next slot** at the end of the range). Only a K-pass longer than a clinic day is a 422. `engine.py` is unchanged; the day loop lives in `service.py`.
 3. **Busy matrix.** One row of 0/1 per slot for the patient (row 0) and one row per
    resource the K-pass needs. A block marks every slot it touches as busy; partial
    overlaps round outward, so a 9:10–9:20 block makes 9:00–9:30 busy.
@@ -143,7 +143,11 @@ All times are split into **15-minute slots** (`SLOT_MINUTES`, configurable).
 
 ### Rules the backend enforces
 
-- A step's duration is a positive multiple of the slot size, up to 24 hours.
+- A step's duration is a positive multiple of the slot size, and a whole K-pass can be at
+  most one clinic day long (12 hours by default); adding or editing a step past that is a 422.
+- A step that needs "any" of a type with no resources left gives a 422 explaining why,
+  instead of a silent "no slot".
+- Booking a start time that has already passed is a 422 ("That time has already passed").
 - A step sets at most one of `resource_id` / `resource_type` (both empty means a rest step).
 - One owner (patient or resource) can't have overlapping blocks; back-to-back is fine.
   Two different owners can be busy at the same time.
@@ -158,7 +162,7 @@ All times are split into **15-minute slots** (`SLOT_MINUTES`, configurable).
 | 201   | Created (including a booking).                                           |
 | 404   | The K-pass, step, patient, resource, or block doesn't exist.             |
 | 409   | Conflicts: an overlapping block, a slot that was just taken, or a resource still in use. |
-| 422   | Invalid input: bad duration, an empty K-pass, or a window shorter than the K-pass. |
+| 422   | Invalid input: bad duration, an empty K-pass, a K-pass longer than a clinic day, a type with no resources, or booking a time that has passed. |
 
 ---
 
@@ -213,6 +217,10 @@ Interactive docs are at `http://localhost:8000/docs`.
 - About 300 blocks over today and the next 2 days, within clinic hours: staff lunches,
   random staff and scanner blocks, and patient blocks. No owner gets overlapping blocks
   (tested in `tests/test_seed.py`).
+- **A fully booked case:** Hana Novak only has two 1-hour gaps per day (10–11 AM and 3–4 PM)
+  for the whole search horizon. Bone Scan and Cardiac Stress Test never fit for her, so
+  Find earliest shows "No slot is available in the next 7 days", while Follow-up
+  (30 min) can still be found.
 
 The random parts use a fixed seed, so every reset gives the same pattern, relative to the
 current day.
