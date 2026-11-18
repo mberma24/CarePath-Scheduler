@@ -210,6 +210,9 @@ Interactive docs are at `http://localhost:8000/docs`.
   the clinic's timezone (from `GET /config`, converted with the browser's `Intl` API in
   `time.ts`), so the UI is correct whatever timezone the browser or the clinic is in,
   including on daylight saving days.
+- **Past blocks are kept as history.** Old blocks (including past bookings) are never
+  deleted: the search only reads blocks inside the window it is searching, and the UI greys
+  out past time. A real deployment would archive old rows with a retention policy.
 - **Bookings are just blocks.** A booked appointment is a set of blocks with a reason like
   "Bone Scan - Ann Patel", so the scheduler treats it like any other busy time.
 - **A simple frontend.** No router or state library: one page, three tabs, `useState`,
