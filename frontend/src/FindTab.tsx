@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import * as api from './api'
 import Timeline from './Timeline'
 import { SLOT_MINUTES, addDays, clinicDateTime, dayRange, formatDay, formatTime, isPast, nowTimeInput, toDateInput, todayInput, toTimeInput } from './time'
-import type { Config, KPass, Patient, Resource, ScheduleResponse } from './types'
+import type { Config, CarePath, Patient, Resource, ScheduleResponse } from './types'
 
 interface Props {
   config: Config // clinic hours and search horizon from GET /config
@@ -10,10 +10,10 @@ interface Props {
 }
 
 export default function FindTab({ config, lockedPatientId }: Props) {
-  const [kpasses, setKPasses] = useState<KPass[]>([])
+  const [carePaths, setCarePaths] = useState<CarePath[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
-  const [kpassId, setKPassId] = useState('')
+  const [carePathId, setCarePathId] = useState('')
   const [patientId, setPatientId] = useState(lockedPatientId ? String(lockedPatientId) : '')
   const [result, setResult] = useState<ScheduleResponse | null>(null)
   const [error, setError] = useState('')
@@ -24,9 +24,9 @@ export default function FindTab({ config, lockedPatientId }: Props) {
   const [booked, setBooked] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.listKPasses(), api.listPatients(), api.listResources()])
+    Promise.all([api.listCarePaths(), api.listPatients(), api.listResources()])
       .then(([k, p, r]) => {
-        setKPasses(k)
+        setCarePaths(k)
         setPatients(p)
         setResources(r)
       })
@@ -42,9 +42,9 @@ export default function FindTab({ config, lockedPatientId }: Props) {
   const dayOver = isPast(searchEnd)
   const dayMinutes = (config.clinic_close_hour - config.clinic_open_hour) * 60
 
-  const kpass = kpasses.find((k) => String(k.id) === kpassId)
-  const tooLong = kpass !== undefined && kpass.total_minutes > dayMinutes
-  const noSteps = kpass !== undefined && kpass.steps.length === 0
+  const carePath = carePaths.find((k) => String(k.id) === carePathId)
+  const tooLong = carePath !== undefined && carePath.total_minutes > dayMinutes
+  const noSteps = carePath !== undefined && carePath.steps.length === 0
 
   const resourceName = (id: number | null) =>
     id === null ? '' : (resources.find((r) => r.id === id)?.name ?? `#${id}`)
@@ -61,7 +61,7 @@ export default function FindTab({ config, lockedPatientId }: Props) {
     setSearchedNext(next)
     setLoading(true)
     try {
-      setResult(await api.findSchedule(Number(kpassId), Number(patientId), start.toISOString(), searchEnd))
+      setResult(await api.findSchedule(Number(carePathId), Number(patientId), start.toISOString(), searchEnd))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -74,8 +74,8 @@ export default function FindTab({ config, lockedPatientId }: Props) {
     setError('')
     setLoading(true)
     try {
-      // Show what was actually booked (the K-pass may have changed since the search)
-      setResult(await api.bookSchedule(Number(kpassId), Number(patientId), result.start_time))
+      // Show what was actually booked (the care path may have changed since the search)
+      setResult(await api.bookSchedule(Number(carePathId), Number(patientId), result.start_time))
       setBooked(true)
     } catch (e) {
       setError((e as Error).message)
@@ -90,14 +90,14 @@ export default function FindTab({ config, lockedPatientId }: Props) {
         <h2>Find earliest schedule</h2>
         <select
           className="full"
-          value={kpassId}
+          value={carePathId}
           onChange={(e) => {
-            setKPassId(e.target.value)
+            setCarePathId(e.target.value)
             setResult(null)
           }}
         >
-          <option value="">Choose a K-pass…</option>
-          {kpasses.map((k) => (
+          <option value="">Choose a care path…</option>
+          {carePaths.map((k) => (
             <option key={k.id} value={k.id}>
               {k.name} ({k.total_minutes} min)
             </option>
@@ -149,7 +149,7 @@ export default function FindTab({ config, lockedPatientId }: Props) {
         </div>
         <button
           className="primary full"
-          disabled={!date || dayOver || !kpassId || !patientId || tooLong || noSteps || loading}
+          disabled={!date || dayOver || !carePathId || !patientId || tooLong || noSteps || loading}
           onClick={() => find()}
         >
           {loading ? 'Searching…' : 'Find earliest'}
@@ -157,16 +157,16 @@ export default function FindTab({ config, lockedPatientId }: Props) {
 
         {tooLong && (
           <p className="error">
-            This K-pass takes {kpass.total_minutes} min, longer than a clinic day ({dayMinutes} min).
+            This care path takes {carePath.total_minutes} min, longer than a clinic day ({dayMinutes} min).
           </p>
         )}
         {dayOver && <p className="error">Those days are in the past. Pick today or a later date.</p>}
-        {noSteps && <p className="error">This K-pass has no steps.</p>}
+        {noSteps && <p className="error">This care path has no steps.</p>}
         {error && <p className="error">{error}</p>}
       </div>
 
       <div className="panel">
-        {!result && <p className="muted">Choose a K-pass and a patient, then search.</p>}
+        {!result && <p className="muted">Choose a care path and a patient, then search.</p>}
         {result && !result.found && (
           <p>
             {searchedNext ? 'No later slot is available' : 'No slot is available'} in the next{' '}

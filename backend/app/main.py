@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import blocks, kpasses, patients, resources, schedule
+from app.api import blocks, care_paths, patients, resources, schedule
 from app.config import settings
 from app.db.models import Base
 from app.db.session import engine
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="KPass Scheduler API", lifespan=lifespan)
+    app = FastAPI(title="Care Path Scheduler API", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
 
     app.include_router(patients.router)
     app.include_router(resources.router)
-    app.include_router(kpasses.router)
+    app.include_router(care_paths.router)
     app.include_router(blocks.router)
     app.include_router(schedule.router)
 

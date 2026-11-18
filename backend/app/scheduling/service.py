@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Block, KPass, KPassStep, Patient, Resource
+from app.db.models import Block, CarePath, CarePathStep, Patient, Resource
 from app.scheduling.engine import Step, find_earliest_start
 
 SLOT = timedelta(minutes=settings.slot_minutes)
@@ -99,20 +99,20 @@ def clinic_day_windows(start: datetime, end: datetime) -> list[tuple[datetime, d
 
 def find_earliest_schedule(
     db: Session,
-    kpass: KPass,
+    care_path: CarePath,
     patient: Patient,
     start: datetime | None = None,
     end: datetime | None = None,
     now: datetime | None = None,
 ) -> ScheduleResult | None:
     """
-    Find the earliest time the patient can do every K-pass step back-to-back.
+    Find the earliest time the patient can do every care path step back-to-back.
 
     Searches [start, end), defaulting to now until the end of the horizon
     (SCHEDULE_HORIZON_DAYS, counted from the start's day). Never searches the past.
     Appointments stay inside clinic hours, so the search runs one clinic day at a time
     and returns the first day that fits. Returns None if no day has a slot.
-    Raises ValueError only for requests that can never work: no steps, a K-pass longer
+    Raises ValueError only for requests that can never work: no steps, a care path longer
     than a clinic day, or a type with no resources.
     """
     now = as_utc(now or datetime.now(UTC))
@@ -121,23 +121,23 @@ def find_earliest_schedule(
     search_start = ceil_to_slot(max(as_utc(start), now) if start else now)
     search_end = floor_to_slot(as_utc(end) if end else default_search_end(search_start))
 
-    # 2. Reject K-passes that can never fit.
-    if not kpass.steps:
-        raise ValueError("K-pass has no steps")
-    for step in kpass.steps:  # e.g. a 45-min step saved before SLOT_MINUTES changed to 30
+    # 2. Reject care paths that can never fit.
+    if not care_path.steps:
+        raise ValueError("Care path has no steps")
+    for step in care_path.steps:  # e.g. a 45-min step saved before SLOT_MINUTES changed to 30
         if step.duration_minutes % settings.slot_minutes:
             raise ValueError(
                 f"Step '{step.name}' ({step.duration_minutes} min) isn't a multiple of the "
-                f"{settings.slot_minutes}-minute slot; edit the K-pass"
+                f"{settings.slot_minutes}-minute slot; edit the care path"
             )
-    total_minutes = sum(step.duration_minutes for step in kpass.steps)
+    total_minutes = sum(step.duration_minutes for step in care_path.steps)
     day_minutes = (settings.clinic_close_hour - settings.clinic_open_hour) * 60
     if total_minutes > day_minutes:
         raise ValueError(
-            f"K-pass ({total_minutes} min) is longer than a clinic day ({day_minutes} min)"
+            f"Care path ({total_minutes} min) is longer than a clinic day ({day_minutes} min)"
         )
 
-    for resource_type in {step.resource_type for step in kpass.steps if step.resource_type}:
+    for resource_type in {step.resource_type for step in care_path.steps if step.resource_type}:
         if db.scalar(select(Resource.id).where(Resource.type == resource_type).limit(1)) is None:
             raise ValueError(f"No resources of type '{resource_type}'")
 
@@ -146,24 +146,26 @@ def find_earliest_schedule(
     total = timedelta(minutes=total_minutes)
     windows = [(s, e) for s, e in clinic_day_windows(search_start, search_end) if e - s >= total]
     for window_start, window_end in windows:
-        result = search_window(db, kpass, patient, window_start, window_end)
+        result = search_window(db, care_path, patient, window_start, window_end)
         if result is not None:
             return result
     return None
 
 
 def search_window(
-    db: Session, kpass: KPass, patient: Patient, window_start: datetime, window_end: datetime
+    db: Session, care_path: CarePath, patient: Patient, window_start: datetime, window_end: datetime
 ) -> ScheduleResult | None:
     """Earliest slot inside one slot-aligned window (one clinic day), or None."""
     num_slots = (window_end - window_start) // SLOT
 
     # a. Rows: patient = row 0, then one row per specific resource, then one per type pool.
     resource_ids = list(
-        dict.fromkeys(step.resource_id for step in kpass.steps if step.resource_id is not None)
+        dict.fromkeys(step.resource_id for step in care_path.steps if step.resource_id is not None)
     )
     resource_types = list(
-        dict.fromkeys(step.resource_type for step in kpass.steps if step.resource_type is not None)
+        dict.fromkeys(
+            step.resource_type for step in care_path.steps if step.resource_type is not None
+        )
     )
     pool = {
         resource_type: list(
@@ -207,7 +209,7 @@ def search_window(
             schedule.append([1] * num_slots)  # no resources of this type left: never free
 
     # d. Run the engine (minutes -> slots; rest steps stay None).
-    def resource_row(step: KPassStep) -> int | None:
+    def resource_row(step: CarePathStep) -> int | None:
         if step.resource_id is not None:
             return row_of[step.resource_id]
         if step.resource_type is not None:
@@ -219,14 +221,14 @@ def search_window(
             duration_slots=step.duration_minutes // settings.slot_minutes,
             resource_row=resource_row(step),
         )
-        for step in kpass.steps
+        for step in care_path.steps
     ]
 
     def assign_pools(start_slot: int) -> list[int | None] | None:
         """Resource for each step, picking one free resource for each pool step's whole interval."""
         assigned: list[int | None] = []
         slot = start_slot
-        for step, engine_step in zip(kpass.steps, engine_steps, strict=True):
+        for step, engine_step in zip(care_path.steps, engine_steps, strict=True):
             end_slot = slot + engine_step.duration_slots
             if step.resource_type is None:
                 assigned.append(step.resource_id)
@@ -254,7 +256,7 @@ def search_window(
     # e. Convert the slot back to real times, step by step.
     step_start = window_start + start_slot * SLOT
     scheduled_steps = []
-    for step, resource_id in zip(kpass.steps, assigned, strict=True):
+    for step, resource_id in zip(care_path.steps, assigned, strict=True):
         step_end = step_start + timedelta(minutes=step.duration_minutes)
         scheduled_steps.append(
             ScheduledStep(
@@ -276,29 +278,29 @@ def search_window(
 
 def book_schedule(
     db: Session,
-    kpass: KPass,
+    care_path: CarePath,
     patient: Patient,
     start: datetime,
     now: datetime | None = None,
 ) -> ScheduleResult | None:
     """
-    Book the K-pass starting exactly at `start` by blocking the patient and each step's resource.
+    Book the care path starting exactly at `start` by blocking the patient and each step's resource.
 
-    Re-checks that the slot is still free (searching a window exactly as long as the K-pass)
+    Re-checks that the slot is still free (searching a window exactly as long as the care path)
     and creates every block in one commit. Returns None if the slot is no longer free.
-    Raises ValueError like find_earliest_schedule (e.g. the K-pass has no steps or start passed).
+    Raises ValueError like find_earliest_schedule (e.g. the care path has no steps or start passed).
     """
     start = as_utc(start)
     if start != floor_to_slot(start):
         raise ValueError("start must be on a slot boundary")
     if start < as_utc(now or datetime.now(UTC)):
         raise ValueError("That time has already passed. Search again.")
-    total = timedelta(minutes=sum(step.duration_minutes for step in kpass.steps))
-    result = find_earliest_schedule(db, kpass, patient, start=start, end=start + total, now=now)
+    total = timedelta(minutes=sum(step.duration_minutes for step in care_path.steps))
+    result = find_earliest_schedule(db, care_path, patient, start=start, end=start + total, now=now)
     if result is None or result.start_time != start:
         return None  # never book a different time than the one requested
 
-    reason = f"{kpass.name} - {patient.name}"[:200]
+    reason = f"{care_path.name} - {patient.name}"[:200]
     db.add(
         Block(
             patient_id=patient.id,

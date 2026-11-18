@@ -59,5 +59,5 @@ def delete_resource(resource_id: int, db: DbSession) -> None:
         db.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "Resource is used by a K-pass step and cannot be deleted",
+            "Resource is used by a care path step and cannot be deleted",
         ) from None

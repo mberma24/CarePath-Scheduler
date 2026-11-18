@@ -9,7 +9,7 @@ export interface Resource {
   type: string
 }
 
-export interface KPassStep {
+export interface CarePathStep {
   id: number
   position: number
   name: string
@@ -18,10 +18,10 @@ export interface KPassStep {
   resource_type: string | null
 }
 
-export interface KPass {
+export interface CarePath {
   id: number
   name: string
-  steps: KPassStep[]
+  steps: CarePathStep[]
   total_minutes: number
 }
 

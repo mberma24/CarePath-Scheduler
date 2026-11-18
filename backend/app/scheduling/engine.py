@@ -7,14 +7,14 @@ class Step:
     resource_row: int | None  # None = rest step
 
 
-def validate_inputs(kpass: list[Step], schedule: list[list[int]]) -> None:
+def validate_inputs(care_path: list[Step], schedule: list[list[int]]) -> None:
     """
     Raise ValueError if the inputs break the engine's preconditions.
     """
 
-    # if either kpass or schedule do not exist
-    if not kpass:
-        raise ValueError("kpass must not be empty")
+    # if either care_path or schedule do not exist
+    if not care_path:
+        raise ValueError("care_path must not be empty")
     if not schedule:
         raise ValueError("schedule must not be empty")
 
@@ -26,38 +26,38 @@ def validate_inputs(kpass: list[Step], schedule: list[list[int]]) -> None:
         if any(cell not in (0, 1) for cell in row):
             raise ValueError(f"schedule row {i} contains values other than 0 and 1")
 
-    for i, step in enumerate(kpass):
+    for i, step in enumerate(care_path):
         if step.duration_slots <= 0:
             raise ValueError(f"step {i} has non-positive duration {step.duration_slots}")
         if step.resource_row is not None and not 0 < step.resource_row < len(schedule):
             raise ValueError(
-                f"kpass step {i} references resource row {step.resource_row}, "
+                f"care_path step {i} references resource row {step.resource_row}, "
                 "which is not in the schedule"
             )
 
 
 def find_earliest_start(
-    kpass: list[Step],
+    care_path: list[Step],
     schedule: list[list[int]],
 ) -> int | None:
     """
     Return the earliest start slot where all steps fit back-to-back, or None if none fit.
 
-    kpass: ordered steps.
+    care_path: ordered steps.
     schedule: row 0 = patient, rows 1..n = resources; 1 = busy, 0 = free.
     """
-    validate_inputs(kpass=kpass, schedule=schedule)
+    validate_inputs(care_path=care_path, schedule=schedule)
 
-    total_duration = sum(step.duration_slots for step in kpass)
+    total_duration = sum(step.duration_slots for step in care_path)
     num_slots = len(schedule[0])  # number of slots in the schedule
     if total_duration > num_slots:
-        return None  # not enough slots in the schedule to fit the kpass
+        return None  # not enough slots in the schedule to fit the care_path
 
     num_busy_slots = 0  # total number of busy slots in the current window
 
     # STARTUP PHASE
     offset = 0
-    for step in kpass:
+    for step in care_path:
         duration = step.duration_slots
 
         # for each step we must check the patient's busy slots and the resource's busy slots
@@ -78,7 +78,7 @@ def find_earliest_start(
 
         # update resource availablity
         offset = 0
-        for step in kpass:
+        for step in care_path:
             if step.resource_row is not None:
                 row = schedule[step.resource_row]
                 num_busy_slots -= row[t - 1 + offset]

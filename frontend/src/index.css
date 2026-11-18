@@ -192,7 +192,7 @@ button.danger:hover:not(:disabled) {
   border-color: var(--danger);
 }
 
-/* Solid buttons: black (e.g. Rename) and red (e.g. Delete K-pass), only while clickable */
+/* Solid buttons: black (e.g. Rename) and red (e.g. Delete care path), only while clickable */
 button.dark:not(:disabled) {
   background: var(--text);
   border-color: var(--text);
@@ -268,7 +268,7 @@ select {
   overflow-y: auto;
 }
 
-/* Taller list that runs to the bottom of the window (K-passes tab) */
+/* Taller list that runs to the bottom of the window (care paths tab) */
 .list.tall {
   max-height: max(120px, calc(100vh - 270px));
 }

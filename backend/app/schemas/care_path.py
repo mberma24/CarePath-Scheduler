@@ -4,12 +4,12 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 from app.config import settings
 
-# A K-pass must fit in one clinic day, so no step (or K-pass) can be longer than that
+# A care path must fit in one clinic day, so no step (or care path) can be longer than that
 CLINIC_DAY_MINUTES = (settings.clinic_close_hour - settings.clinic_open_hour) * 60
 MAX_STEP_MINUTES = CLINIC_DAY_MINUTES
 
 
-class KPassStepBase(BaseModel):
+class CarePathStepBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=200)
@@ -25,44 +25,44 @@ class KPassStepBase(BaseModel):
         return self
 
 
-class KPassStepCreate(KPassStepBase):
+class CarePathStepCreate(CarePathStepBase):
     position: int | None = Field(default=None, ge=0)  # None or past the end = append
 
 
-class KPassStepUpdate(KPassStepBase):
+class CarePathStepUpdate(CarePathStepBase):
     pass
 
 
-class KPassStepRead(KPassStepBase):
+class CarePathStepRead(CarePathStepBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     position: int
 
 
-class KPassStepOrder(BaseModel):
+class CarePathStepOrder(BaseModel):
     step_ids: list[int]
 
 
-class KPassBase(BaseModel):
+class CarePathBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=200)
 
 
-class KPassCreate(KPassBase):
+class CarePathCreate(CarePathBase):
     pass
 
 
-class KPassUpdate(KPassBase):
+class CarePathUpdate(CarePathBase):
     pass
 
 
-class KPassRead(KPassBase):
+class CarePathRead(CarePathBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    steps: list[KPassStepRead]
+    steps: list[CarePathStepRead]
 
     @computed_field
     @property

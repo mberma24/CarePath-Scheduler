@@ -9,11 +9,11 @@ PATIENT, DOCTOR, NMT = 0, 1, 2  # row indexes
 
 
 @pytest.mark.parametrize(
-    ("kpass", "schedule", "message"),
+    ("care_path", "schedule", "message"),
     [
-        pytest.param([], [[0, 0]], "kpass must not be empty", id="empty-kpass"),
+        pytest.param([], [[0, 0]], "care_path must not be empty", id="empty-care-path"),
         pytest.param([Step(1, None)], [], "schedule must not be empty", id="empty-schedule"),
-        pytest.param([], [], "kpass must not be empty", id="both-empty"),
+        pytest.param([], [], "care_path must not be empty", id="both-empty"),
         pytest.param([Step(1, DOCTOR)], [[0, 0, 0], [0, 0]], "row 1 has 2 slots", id="ragged-rows"),
         pytest.param([Step(1, None)], [[0, 2, 0]], "values other than 0 and 1", id="value-2"),
         pytest.param(
@@ -31,15 +31,15 @@ PATIENT, DOCTOR, NMT = 0, 1, 2  # row indexes
         ),
     ],
 )
-def test_invalid_input_raises(kpass, schedule, message):
+def test_invalid_input_raises(care_path, schedule, message):
     with pytest.raises(ValueError, match=message):
-        find_earliest_start(kpass, schedule)
+        find_earliest_start(care_path, schedule)
 
 
 # ---------- Valid input, no availability ----------
 
 
-def test_kpass_longer_than_schedule_returns_none():
+def test_care_path_longer_than_schedule_returns_none():
     assert find_earliest_start([Step(3, DOCTOR)], [[0, 0], [0, 0]]) is None
 
 
@@ -92,14 +92,14 @@ def test_rest_step_ignores_resource_busy():
         [0, 1, 1, 0],  # doctor: busy only during the rest
         [0, 0, 0, 0],  # nmt
     ]
-    kpass = [Step(1, DOCTOR), Step(2, None), Step(1, NMT)]
-    assert find_earliest_start(kpass, schedule) == 0
+    care_path = [Step(1, DOCTOR), Step(2, None), Step(1, NMT)]
+    assert find_earliest_start(care_path, schedule) == 0
 
 
 def test_patient_busy_midway_shifts_start():
     schedule = [[0, 1, 0, 0, 0]]  # patient only
-    kpass = [Step(1, None), Step(1, None)]
-    assert find_earliest_start(kpass, schedule) == 2
+    care_path = [Step(1, None), Step(1, None)]
+    assert find_earliest_start(care_path, schedule) == 2
 
 
 def test_busy_slot_just_after_window_does_not_block():
@@ -115,15 +115,15 @@ def test_same_resource_used_by_multiple_steps():
         [0, 0, 0, 0],  # patient
         [0, 1, 0, 0],  # doctor
     ]
-    kpass = [Step(1, DOCTOR), Step(1, DOCTOR)]
-    assert find_earliest_start(kpass, schedule) == 2
+    care_path = [Step(1, DOCTOR), Step(1, DOCTOR)]
+    assert find_earliest_start(care_path, schedule) == 2
 
 
 def test_unused_resource_rows_are_ignored():
     schedule = [
         [0, 0],  # patient
         [0, 0],  # doctor
-        [1, 1],  # nmt: busy, but not in the kpass
+        [1, 1],  # nmt: busy, but not in the care_path
     ]
     assert find_earliest_start([Step(1, DOCTOR)], schedule) == 0
 
@@ -134,8 +134,8 @@ def test_second_resource_free_at_its_offset():
         [0] * 6,  # doctor
         [1, 1, 0, 0, 0, 0],  # nmt: free by its step's offset (2)
     ]
-    kpass = [Step(1, DOCTOR), Step(1, None), Step(1, NMT)]
-    assert find_earliest_start(kpass, schedule) == 0
+    care_path = [Step(1, DOCTOR), Step(1, None), Step(1, NMT)]
+    assert find_earliest_start(care_path, schedule) == 0
 
 
 def test_second_resource_conflict_shifts_start():
@@ -144,5 +144,5 @@ def test_second_resource_conflict_shifts_start():
         [0] * 6,  # doctor
         [1, 1, 1, 0, 0, 0],  # nmt: busy at offset 2 when t=0
     ]
-    kpass = [Step(1, DOCTOR), Step(1, None), Step(1, NMT)]
-    assert find_earliest_start(kpass, schedule) == 1
+    care_path = [Step(1, DOCTOR), Step(1, None), Step(1, NMT)]
+    assert find_earliest_start(care_path, schedule) == 1

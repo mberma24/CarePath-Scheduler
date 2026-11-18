@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config import settings
-from app.db.models import Block, KPass, Patient
+from app.db.models import Block, CarePath, Patient
 from app.scheduling.service import find_earliest_schedule
 from app.seed import seed
 
@@ -43,19 +43,19 @@ def test_seed_blocks_are_valid(db):
         assert (block.patient_id is None) != (block.resource_id is None)  # exactly one owner
 
 
-def test_seed_has_one_patient_with_no_room_for_long_kpasses(db, monkeypatch):
+def test_seed_has_one_patient_with_no_room_for_long_care_paths(db, monkeypatch):
     monkeypatch.setattr(settings, "schedule_horizon_days", 7)
     now = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)  # 7:00 in New York
     seed(db, now)
     hana = db.scalar(select(Patient).where(Patient.name == "Hana Novak"))
     ann = db.scalar(select(Patient).where(Patient.name == "Ann Patel"))
-    kpasses = {k.name: k for k in db.scalars(select(KPass))}
+    care_paths = {k.name: k for k in db.scalars(select(CarePath))}
 
-    # No slot in the whole 7-day horizon for Hana's long K-passes...
+    # No slot in the whole 7-day horizon for Hana's long care paths...
     for name in ("Bone Scan", "Cardiac Stress Test"):
-        assert find_earliest_schedule(db, kpasses[name], hana, now=now) is None
+        assert find_earliest_schedule(db, care_paths[name], hana, now=now) is None
     # ...but other patients still get one.
-    assert find_earliest_schedule(db, kpasses["Bone Scan"], ann, now=now) is not None
+    assert find_earliest_schedule(db, care_paths["Bone Scan"], ann, now=now) is not None
 
 
 def test_seed_stores_clinic_hours_as_utc(db):

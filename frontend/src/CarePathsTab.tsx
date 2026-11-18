@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as api from './api'
 import type { StepInput } from './api'
 import { SLOT_MINUTES } from './time'
-import type { KPass, KPassStep, Resource } from './types'
+import type { CarePath, CarePathStep, Resource } from './types'
 
 // Round to the nearest slot (SLOT_MINUTES), between one slot and a clinic day, matching the backend
 function snapMinutes(value: number, max: number): number {
@@ -10,18 +10,18 @@ function snapMinutes(value: number, max: number): number {
   return Number.isFinite(snapped) ? Math.min(max, Math.max(SLOT_MINUTES, snapped)) : SLOT_MINUTES
 }
 
-// dayMinutes: length of a clinic day; no step (or K-pass) can be longer
-export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
-  const [kpasses, setKPasses] = useState<KPass[]>([])
+// dayMinutes: length of a clinic day; no step (or care path) can be longer
+export default function CarePathsTab({ dayMinutes }: { dayMinutes: number }) {
+  const [carePaths, setCarePaths] = useState<CarePath[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [newName, setNewName] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([api.listKPasses(), api.listResources()])
+    Promise.all([api.listCarePaths(), api.listResources()])
       .then(([k, r]) => {
-        setKPasses(k)
+        setCarePaths(k)
         setResources(r)
       })
       .catch((e: Error) => setError(e.message))
@@ -37,14 +37,14 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
     }
   }
 
-  function replace(updated: KPass) {
-    setKPasses((list) => list.map((k) => (k.id === updated.id ? updated : k)))
+  function replace(updated: CarePath) {
+    setCarePaths((list) => list.map((k) => (k.id === updated.id ? updated : k)))
   }
 
   async function create() {
-    const created = await run(() => api.createKPass(newName))
+    const created = await run(() => api.createCarePath(newName))
     if (created) {
-      setKPasses((list) => [...list, created])
+      setCarePaths((list) => [...list, created])
       setSelectedId(created.id)
       setNewName('')
     }
@@ -52,13 +52,13 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
 
   async function remove(id: number) {
     await run(async () => {
-      await api.deleteKPass(id)
-      setKPasses((list) => list.filter((k) => k.id !== id))
+      await api.deleteCarePath(id)
+      setCarePaths((list) => list.filter((k) => k.id !== id))
       setSelectedId(null)
     })
   }
 
-  const selected = kpasses.find((k) => k.id === selectedId)
+  const selected = carePaths.find((k) => k.id === selectedId)
 
   return (
     <div>
@@ -66,9 +66,9 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
 
       <div className="split">
         <div className="panel stack">
-          <h2>K-passes</h2>
+          <h2>Care paths</h2>
           <div className="list tall">
-            {kpasses.map((k) => (
+            {carePaths.map((k) => (
               <button
                 key={k.id}
                 className={k.id === selectedId ? 'list-item active' : 'list-item'}
@@ -78,11 +78,11 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
                 <span className="muted">{k.total_minutes} min</span>
               </button>
             ))}
-            {kpasses.length === 0 && <p className="muted" style={{ padding: 8 }}>No K-passes yet.</p>}
+            {carePaths.length === 0 && <p className="muted" style={{ padding: 8 }}>No care paths yet.</p>}
           </div>
           <div className="row">
             <input
-              placeholder="New K-pass name"
+              placeholder="New care path name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               style={{ flex: 1 }}
@@ -94,9 +94,9 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
         </div>
 
         {selected ? (
-          <KPassEditor
+          <CarePathEditor
             key={selected.id}
-            kpass={selected}
+            carePath={selected}
             resources={resources}
             dayMinutes={dayMinutes}
             run={run}
@@ -105,7 +105,7 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
           />
         ) : (
           <div className="panel">
-            <p className="muted">Select a K-pass to edit its steps, or create a new one.</p>
+            <p className="muted">Select a care path to edit its steps, or create a new one.</p>
           </div>
         )}
       </div>
@@ -114,20 +114,20 @@ export default function KPassesTab({ dayMinutes }: { dayMinutes: number }) {
 }
 
 interface EditorProps {
-  kpass: KPass
+  carePath: CarePath
   resources: Resource[]
   dayMinutes: number
   run: <T>(fn: () => Promise<T>) => Promise<T | undefined>
-  onChange: (kpass: KPass) => void
+  onChange: (carePath: CarePath) => void
   onDelete: () => void
 }
 
-function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: EditorProps) {
-  const [name, setName] = useState(kpass.name)
+function CarePathEditor({ carePath, resources, dayMinutes, run, onChange, onDelete }: EditorProps) {
+  const [name, setName] = useState(carePath.name)
 
   // Saves run one after another, so a step's auto-save and a quick ↑/↓ can't answer out of order
   const queue = useRef<Promise<void>>(Promise.resolve())
-  function save(fn: () => Promise<KPass>) {
+  function save(fn: () => Promise<CarePath>) {
     queue.current = queue.current.then(async () => {
       const updated = await run(fn)
       if (updated) onChange(updated)
@@ -135,10 +135,10 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
   }
 
   function move(index: number, delta: number) {
-    const ids = kpass.steps.map((s) => s.id)
+    const ids = carePath.steps.map((s) => s.id)
     const [id] = ids.splice(index, 1)
     ids.splice(index + delta, 0, id)
-    save(() => api.reorderSteps(kpass.id, ids))
+    save(() => api.reorderSteps(carePath.id, ids))
   }
 
   return (
@@ -146,13 +146,13 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
       <div className="row" style={{ marginBottom: 12 }}>
         <input value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, fontWeight: 600 }} />
         <span className="muted" style={{ marginRight: 8 }}>
-          Total: {kpass.total_minutes} min
+          Total: {carePath.total_minutes} min
         </span>
-        <button className="dark" disabled={!name.trim() || name === kpass.name} onClick={() => save(() => api.renameKPass(kpass.id, name))}>
+        <button className="dark" disabled={!name.trim() || name === carePath.name} onClick={() => save(() => api.renameCarePath(carePath.id, name))}>
           Rename
         </button>
         <button className="danger-solid" onClick={onDelete}>
-          Delete K-pass
+          Delete care path
         </button>
       </div>
 
@@ -168,7 +168,7 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
             </tr>
           </thead>
           <tbody>
-            {kpass.steps.map((step, i) => (
+            {carePath.steps.map((step, i) => (
               <StepRow
                 key={step.id}
                 index={i}
@@ -176,17 +176,17 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
                 resources={resources}
                 dayMinutes={dayMinutes}
                 isFirst={i === 0}
-                isLast={i === kpass.steps.length - 1}
+                isLast={i === carePath.steps.length - 1}
                 onMove={(delta) => move(i, delta)}
-                onSave={(input) => save(() => api.updateStep(kpass.id, step.id, input))}
-                onDelete={() => save(() => api.deleteStep(kpass.id, step.id))}
+                onSave={(input) => save(() => api.updateStep(carePath.id, step.id, input))}
+                onDelete={() => save(() => api.deleteStep(carePath.id, step.id))}
               />
             ))}
             <StepRow
-              key={`new-${kpass.steps.length}`}
+              key={`new-${carePath.steps.length}`}
               resources={resources}
               dayMinutes={dayMinutes}
-              onSave={(input) => save(() => api.addStep(kpass.id, input))}
+              onSave={(input) => save(() => api.addStep(carePath.id, input))}
             />
           </tbody>
         </table>
@@ -196,7 +196,7 @@ function KPassEditor({ kpass, resources, dayMinutes, run, onChange, onDelete }: 
 }
 
 interface StepRowProps {
-  step?: KPassStep
+  step?: CarePathStep
   index?: number
   resources: Resource[]
   dayMinutes: number

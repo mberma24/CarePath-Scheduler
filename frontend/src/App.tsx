@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from './api'
 import FindTab from './FindTab'
-import KPassesTab from './KPassesTab'
+import CarePathsTab from './CarePathsTab'
 import RolePicker from './RolePicker'
 import SchedulesTab from './SchedulesTab'
 import { applyClinicSettings } from './time'
 import type { Config, Patient, Resource } from './types'
 
-type Tab = 'kpasses' | 'schedules' | 'find'
+type Tab = 'carePaths' | 'schedules' | 'find'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'kpasses', label: 'K-passes' },
+  { id: 'carePaths', label: 'Care paths' },
   { id: 'schedules', label: 'Schedules' },
   { id: 'find', label: 'Find earliest' },
 ]
@@ -27,13 +27,13 @@ const DEFAULT_CONFIG: Config = {
 // Demo role switcher, not real login: "admin", "patient:3", or "resource:5".
 // The backend doesn't check roles; see "Future work" in the README.
 const TABS_FOR: Record<string, Tab[]> = {
-  admin: ['kpasses', 'schedules', 'find'], // everything
+  admin: ['carePaths', 'schedules', 'find'], // everything
   patient: ['schedules', 'find'], // their own timeline, and finding a time for themselves
-  resource: ['kpasses', 'schedules', 'find'], // their own timeline, K-passes, and finding times
+  resource: ['carePaths', 'schedules', 'find'], // their own timeline, care paths, and finding times
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('kpasses')
+  const [tab, setTab] = useState<Tab>('carePaths')
   const [role, setRole] = useState('admin')
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
@@ -77,7 +77,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-top">
-          <h1>KPass Scheduler</h1>
+          <h1>Care Path Scheduler</h1>
           <RolePicker
             value={role}
             patients={patients}
@@ -104,7 +104,7 @@ export default function App() {
             Times may be wrong; check that the backend is running and reload.
           </p>
         )}
-        {configLoaded && tab === 'kpasses' && <KPassesTab dayMinutes={(config.clinic_close_hour - config.clinic_open_hour) * 60} />}
+        {configLoaded && tab === 'carePaths' && <CarePathsTab dayMinutes={(config.clinic_close_hour - config.clinic_open_hour) * 60} />}
         {configLoaded && tab === 'schedules' && (
           <SchedulesTab
             lockedOwner={role === 'admin' ? undefined : role}

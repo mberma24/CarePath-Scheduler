@@ -4,7 +4,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 
 
 class ScheduleRequest(BaseModel):
-    kpass_id: int
+    care_path_id: int
     patient_id: int
     start: AwareDatetime | None = None  # default: now
     end: AwareDatetime | None = None  # default: end of today (clinic time)
@@ -17,7 +17,7 @@ class ScheduleRequest(BaseModel):
 
 
 class BookRequest(BaseModel):
-    kpass_id: int
+    care_path_id: int
     patient_id: int
     start: AwareDatetime  # usually the start_time returned by POST /schedule
 

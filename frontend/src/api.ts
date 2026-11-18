@@ -1,4 +1,4 @@
-import type { Block, Config, KPass, Patient, Resource, ScheduleResponse } from './types'
+import type { Block, Config, CarePath, Patient, Resource, ScheduleResponse } from './types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
@@ -39,7 +39,7 @@ export const listResources = () => request<Resource[]>('/resources')
 export const createResource = (name: string, type: string) =>
   request<Resource>('/resources', 'POST', { name, type })
 
-// K-passes
+// Care paths
 export interface StepInput {
   name: string
   duration_minutes: number
@@ -47,20 +47,20 @@ export interface StepInput {
   resource_type: string | null
 }
 
-export const listKPasses = () => request<KPass[]>('/kpasses')
-export const createKPass = (name: string) => request<KPass>('/kpasses', 'POST', { name })
-export const renameKPass = (id: number, name: string) =>
-  request<KPass>(`/kpasses/${id}`, 'PUT', { name })
-export const deleteKPass = (id: number) => request<void>(`/kpasses/${id}`, 'DELETE')
+export const listCarePaths = () => request<CarePath[]>('/care-paths')
+export const createCarePath = (name: string) => request<CarePath>('/care-paths', 'POST', { name })
+export const renameCarePath = (id: number, name: string) =>
+  request<CarePath>(`/care-paths/${id}`, 'PUT', { name })
+export const deleteCarePath = (id: number) => request<void>(`/care-paths/${id}`, 'DELETE')
 
-export const addStep = (kpassId: number, step: StepInput) =>
-  request<KPass>(`/kpasses/${kpassId}/steps`, 'POST', step)
-export const updateStep = (kpassId: number, stepId: number, step: StepInput) =>
-  request<KPass>(`/kpasses/${kpassId}/steps/${stepId}`, 'PUT', step)
-export const deleteStep = (kpassId: number, stepId: number) =>
-  request<KPass>(`/kpasses/${kpassId}/steps/${stepId}`, 'DELETE')
-export const reorderSteps = (kpassId: number, stepIds: number[]) =>
-  request<KPass>(`/kpasses/${kpassId}/steps`, 'PUT', { step_ids: stepIds })
+export const addStep = (carePathId: number, step: StepInput) =>
+  request<CarePath>(`/care-paths/${carePathId}/steps`, 'POST', step)
+export const updateStep = (carePathId: number, stepId: number, step: StepInput) =>
+  request<CarePath>(`/care-paths/${carePathId}/steps/${stepId}`, 'PUT', step)
+export const deleteStep = (carePathId: number, stepId: number) =>
+  request<CarePath>(`/care-paths/${carePathId}/steps/${stepId}`, 'DELETE')
+export const reorderSteps = (carePathId: number, stepIds: number[]) =>
+  request<CarePath>(`/care-paths/${carePathId}/steps`, 'PUT', { step_ids: stepIds })
 
 // Blocks
 export interface BlockFilter {
@@ -89,18 +89,18 @@ export const createBlock = (block: BlockInput) => request<Block>('/blocks', 'POS
 export const deleteBlock = (id: number) => request<void>(`/blocks/${id}`, 'DELETE')
 
 // Schedule
-export const findSchedule = (kpassId: number, patientId: number, start?: string, end?: string) =>
+export const findSchedule = (carePathId: number, patientId: number, start?: string, end?: string) =>
   request<ScheduleResponse>('/schedule', 'POST', {
-    kpass_id: kpassId,
+    care_path_id: carePathId,
     patient_id: patientId,
     start,
     end,
   })
 
 // Book a slot returned by findSchedule (blocks the patient and each step's resource)
-export const bookSchedule = (kpassId: number, patientId: number, start: string) =>
+export const bookSchedule = (carePathId: number, patientId: number, start: string) =>
   request<ScheduleResponse>('/schedule/book', 'POST', {
-    kpass_id: kpassId,
+    care_path_id: carePathId,
     patient_id: patientId,
     start,
   })

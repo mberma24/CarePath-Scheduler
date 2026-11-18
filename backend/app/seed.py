@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db.models import Base, Block, KPass, KPassStep, Patient, Resource
+from app.db.models import Base, Block, CarePath, CarePathStep, Patient, Resource
 from app.db.session import SessionLocal, engine
 
 
@@ -47,31 +47,41 @@ def seed(db: Session, now: datetime) -> None:
         ]
     ]
 
-    # K-passes (the interview example, a short one, and one with a type-only chain)
-    bone_scan = KPass(
+    # Care paths (the interview example, a short one, and one with a type-only chain)
+    bone_scan = CarePath(
         name="Bone Scan",
         steps=[
-            KPassStep(position=0, name="Doctor consult", duration_minutes=45, resource=dr_lee),
-            KPassStep(position=1, name="Rest", duration_minutes=30),
-            KPassStep(position=2, name="Rest", duration_minutes=30),
-            KPassStep(position=3, name="NMT injection", duration_minutes=30, resource_type="nmt"),
-            KPassStep(position=4, name="Scan", duration_minutes=30, resource_type="scanner"),
+            CarePathStep(position=0, name="Doctor consult", duration_minutes=45, resource=dr_lee),
+            CarePathStep(position=1, name="Rest", duration_minutes=30),
+            CarePathStep(position=2, name="Rest", duration_minutes=30),
+            CarePathStep(
+                position=3, name="NMT injection", duration_minutes=30, resource_type="nmt"
+            ),
+            CarePathStep(position=4, name="Scan", duration_minutes=30, resource_type="scanner"),
         ],
     )
-    follow_up = KPass(
+    follow_up = CarePath(
         name="Follow-up",
         steps=[
-            KPassStep(position=0, name="Doctor review", duration_minutes=30, resource_type="doctor")
+            CarePathStep(
+                position=0, name="Doctor review", duration_minutes=30, resource_type="doctor"
+            )
         ],
     )
-    cardiac = KPass(
+    cardiac = CarePath(
         name="Cardiac Stress Test",
         steps=[
-            KPassStep(position=0, name="Injection", duration_minutes=15, resource_type="nmt"),
-            KPassStep(position=1, name="Rest", duration_minutes=45),
-            KPassStep(position=2, name="Rest scan", duration_minutes=30, resource_type="scanner"),
-            KPassStep(position=3, name="Stress test", duration_minutes=30, resource_type="doctor"),
-            KPassStep(position=4, name="Stress scan", duration_minutes=30, resource_type="scanner"),
+            CarePathStep(position=0, name="Injection", duration_minutes=15, resource_type="nmt"),
+            CarePathStep(position=1, name="Rest", duration_minutes=45),
+            CarePathStep(
+                position=2, name="Rest scan", duration_minutes=30, resource_type="scanner"
+            ),
+            CarePathStep(
+                position=3, name="Stress test", duration_minutes=30, resource_type="doctor"
+            ),
+            CarePathStep(
+                position=4, name="Stress scan", duration_minutes=30, resource_type="scanner"
+            ),
         ],
     )
 
@@ -113,7 +123,7 @@ def seed(db: Session, now: datetime) -> None:
 
     # Fully booked case: Hana Novak only has 1-hour gaps (10-11 and 15-16) for the whole
     # search horizon, so Bone Scan (165 min) and Cardiac Stress Test (150 min) never fit
-    # for her, while short K-passes like Follow-up (30 min) still can.
+    # for her, while short care paths like Follow-up (30 min) still can.
     hana = patients[-1]
     for day in range(settings.schedule_horizon_days):
         for start, end in [(7, 10), (11, 15), (16, 19)]:

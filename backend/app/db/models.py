@@ -31,23 +31,23 @@ class Resource(Base):
     )
 
 
-class KPass(Base):
-    __tablename__ = "kpass"
+class CarePath(Base):
+    __tablename__ = "care_path"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
 
-    steps: Mapped[list["KPassStep"]] = relationship(
-        back_populates="kpass",
-        order_by="KPassStep.position",
+    steps: Mapped[list["CarePathStep"]] = relationship(
+        back_populates="care_path",
+        order_by="CarePathStep.position",
         cascade="all, delete-orphan",
     )
 
 
-class KPassStep(Base):
-    __tablename__ = "kpass_step"
+class CarePathStep(Base):
+    __tablename__ = "care_path_step"
     __table_args__ = (
-        UniqueConstraint("kpass_id", "position"),
+        UniqueConstraint("care_path_id", "position"),
         CheckConstraint("duration_minutes > 0", name="ck_step_positive_duration"),
         CheckConstraint(
             "resource_id IS NULL OR resource_type IS NULL", name="ck_step_one_resource_kind"
@@ -55,14 +55,14 @@ class KPassStep(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    kpass_id: Mapped[int] = mapped_column(ForeignKey("kpass.id", ondelete="CASCADE"))
+    care_path_id: Mapped[int] = mapped_column(ForeignKey("care_path.id", ondelete="CASCADE"))
     position: Mapped[int]
     name: Mapped[str] = mapped_column(String(200))
     duration_minutes: Mapped[int]
     resource_id: Mapped[int | None] = mapped_column(ForeignKey("resource.id"))  # one resource
     resource_type: Mapped[str | None] = mapped_column(String(50))  # or any resource of this type
 
-    kpass: Mapped["KPass"] = relationship(back_populates="steps")
+    care_path: Mapped["CarePath"] = relationship(back_populates="steps")
     resource: Mapped["Resource | None"] = relationship()
 
 
