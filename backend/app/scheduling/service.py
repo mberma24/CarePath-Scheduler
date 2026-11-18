@@ -63,14 +63,36 @@ class ScheduleResult:
     steps: list[ScheduledStep]
 
 
-def default_search_end(now: datetime) -> datetime:
-    """Midnight (clinic time) at the end of the last horizon day; horizon 1 = end of today."""
-    clinic_tz = ZoneInfo(settings.clinic_timezone)
-    today = now.astimezone(clinic_tz).date()
+def clinic_tz() -> ZoneInfo:
+    return ZoneInfo(settings.clinic_timezone)
+
+
+def default_search_end(start: datetime) -> datetime:
+    """Midnight (clinic time) ending the horizon, counted from the start's day.
+
+    Horizon 1 = end of the start's day; horizon 7 = end of the 7th day.
+    """
+    first_day = as_utc(start).astimezone(clinic_tz()).date()
     last_midnight = datetime.combine(
-        today + timedelta(days=settings.schedule_horizon_days), time.min, tzinfo=clinic_tz
+        first_day + timedelta(days=settings.schedule_horizon_days), time.min, tzinfo=clinic_tz()
     )
     return last_midnight.astimezone(UTC)
+
+
+def clinic_day_windows(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    """The open hours of each clinic day, clipped to [start, end) and aligned to slots."""
+    windows = []
+    day = start.astimezone(clinic_tz()).date()
+    last_day = end.astimezone(clinic_tz()).date()
+    while day <= last_day:
+        opens = datetime.combine(day, time(settings.clinic_open_hour), tzinfo=clinic_tz())
+        closes = datetime.combine(day, time(settings.clinic_close_hour), tzinfo=clinic_tz())
+        window_start = ceil_to_slot(max(start, opens.astimezone(UTC)))
+        window_end = floor_to_slot(min(end, closes.astimezone(UTC)))
+        if window_end > window_start:
+            windows.append((window_start, window_end))
+        day += timedelta(days=1)
+    return windows
 
 
 def find_earliest_schedule(
@@ -84,28 +106,56 @@ def find_earliest_schedule(
     """
     Find the earliest time the patient can do every K-pass step back-to-back.
 
-    Searches [start, end), defaulting to now until the end of the horizon (today).
-    Never searches the past. Returns None if nothing fits in the window.
-    Raises ValueError if the K-pass has no steps or is longer than the window.
+    Searches [start, end), defaulting to now until the end of the horizon
+    (SCHEDULE_HORIZON_DAYS, counted from the start's day). Never searches the past.
+    Appointments stay inside clinic hours, so the search runs one clinic day at a time
+    and returns the first day that fits. Returns None if no day has a slot.
+    Raises ValueError if the K-pass has no steps or can't fit in any day of the window.
     """
     now = as_utc(now or datetime.now(UTC))
 
     # 1. Search window, aligned to slots, never before now.
-    window_start = ceil_to_slot(max(as_utc(start), now) if start else now)
-    window_end = floor_to_slot(as_utc(end) if end else default_search_end(now))
+    search_start = ceil_to_slot(max(as_utc(start), now) if start else now)
+    search_end = floor_to_slot(as_utc(end) if end else default_search_end(search_start))
 
     # 2. Reject K-passes that can never fit.
     if not kpass.steps:
         raise ValueError("K-pass has no steps")
     total_minutes = sum(step.duration_minutes for step in kpass.steps)
-    window_minutes = max(int((window_end - window_start).total_seconds() // 60), 0)
-    if total_minutes > window_minutes:
+    day_minutes = (settings.clinic_close_hour - settings.clinic_open_hour) * 60
+    if total_minutes > day_minutes:
         raise ValueError(
-            f"K-pass ({total_minutes} min) is longer than the search window ({window_minutes} min)"
+            f"K-pass ({total_minutes} min) is longer than a clinic day ({day_minutes} min)"
         )
+
+    # 3. One search per clinic day; days with too little time left are skipped.
+    total = timedelta(minutes=total_minutes)
+    windows = [(s, e) for s, e in clinic_day_windows(search_start, search_end) if e - s >= total]
+    if not windows:
+        longest = max(
+            (
+                int((e - s).total_seconds() // 60)
+                for s, e in clinic_day_windows(search_start, search_end)
+            ),
+            default=0,
+        )
+        raise ValueError(
+            f"K-pass ({total_minutes} min) is longer than the search window ({longest} min)"
+        )
+    for window_start, window_end in windows:
+        result = search_window(db, kpass, patient, window_start, window_end)
+        if result is not None:
+            return result
+    return None
+
+
+def search_window(
+    db: Session, kpass: KPass, patient: Patient, window_start: datetime, window_end: datetime
+) -> ScheduleResult | None:
+    """Earliest slot inside one slot-aligned window (one clinic day), or None."""
     num_slots = (window_end - window_start) // SLOT
 
-    # 3. Rows: patient = row 0, then one row per specific resource, then one per type pool.
+    # a. Rows: patient = row 0, then one row per specific resource, then one per type pool.
     resource_ids = list(
         dict.fromkeys(step.resource_id for step in kpass.steps if step.resource_id is not None)
     )
@@ -127,7 +177,7 @@ def find_earliest_schedule(
     }
     all_resource_ids = list(dict.fromkeys(resource_ids + [r for ids in pool.values() for r in ids]))
 
-    # 4. Load only the blocks that overlap the window, for this patient and these resources.
+    # b. Load only the blocks that overlap the window, for this patient and these resources.
     blocks = db.scalars(
         select(Block).where(
             Block.end_time > window_start,
@@ -136,7 +186,7 @@ def find_earliest_schedule(
         )
     ).all()
 
-    # 5. Build the 0/1 matrix. A pool slot is busy only if every resource of that type is busy.
+    # c. Build the 0/1 matrix. A pool slot is busy only if every resource of that type is busy.
     patient_blocks = [b for b in blocks if b.patient_id == patient.id]
     busy = {
         resource_id: busy_row(
@@ -153,7 +203,7 @@ def find_earliest_schedule(
         else:
             schedule.append([1] * num_slots)  # no resources of this type left: never free
 
-    # 6. Run the engine (minutes -> slots; rest steps stay None).
+    # d. Run the engine (minutes -> slots; rest steps stay None).
     def resource_row(step: KPassStep) -> int | None:
         if step.resource_id is not None:
             return row_of[step.resource_id]
@@ -198,7 +248,7 @@ def find_earliest_schedule(
             break
         offset = start_slot + 1
 
-    # 7. Convert the slot back to real times, step by step.
+    # e. Convert the slot back to real times, step by step.
     step_start = window_start + start_slot * SLOT
     scheduled_steps = []
     for step, resource_id in zip(kpass.steps, assigned, strict=True):
@@ -240,8 +290,8 @@ def book_schedule(
         raise ValueError("start must be on a slot boundary")
     total = timedelta(minutes=sum(step.duration_minutes for step in kpass.steps))
     result = find_earliest_schedule(db, kpass, patient, start=start, end=start + total, now=now)
-    if result is None:
-        return None
+    if result is None or result.start_time != start:
+        return None  # never book a different time than the one requested
 
     reason = f"{kpass.name} - {patient.name}"[:200]
     db.add(

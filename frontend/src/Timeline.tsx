@@ -16,15 +16,16 @@ interface Props {
   onSlotPress?: (minute: number) => void // mouse pressed on a row
   onSlotEnter?: (minute: number) => void // mouse moved onto a row
   fit?: boolean // only show the hours the items cover
+  hours?: [number, number] // otherwise show these hours (default: the whole day)
 }
 
 const ROW_PX = 20 // must match .timeline-row height
 
-// A vertical day view in 15-minute rows. Shows the whole day, or with `fit` only the
-// hours the items cover.
-export default function Timeline({ date, items, selection, onSlotPress, onSlotEnter, fit = false }: Props) {
-  let first = 0
-  let last = 24 * 60
+// A vertical day view in 15-minute rows. Shows `hours` (default the whole day), or with
+// `fit` only the hours the items cover.
+export default function Timeline({ date, items, selection, onSlotPress, onSlotEnter, fit = false, hours = [0, 24] }: Props) {
+  let first = hours[0] * 60
+  let last = hours[1] * 60
   if (fit && items.length) {
     first = Math.min(...items.map((item) => Math.floor(isoToMinute(date, item.start) / 60) * 60))
     last = Math.max(...items.map((item) => Math.ceil(isoToMinute(date, item.end) / 60) * 60))

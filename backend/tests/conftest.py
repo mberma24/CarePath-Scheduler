@@ -6,9 +6,20 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.db.models import Base
 from app.db.session import get_db
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def fixed_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests use fixed scheduling settings, whatever .env or config.py say."""
+    monkeypatch.setattr(settings, "slot_minutes", 15)
+    monkeypatch.setattr(settings, "schedule_horizon_days", 1)
+    monkeypatch.setattr(settings, "clinic_timezone", "America/New_York")
+    monkeypatch.setattr(settings, "clinic_open_hour", 7)
+    monkeypatch.setattr(settings, "clinic_close_hour", 19)
 
 
 @pytest.fixture

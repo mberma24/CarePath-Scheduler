@@ -1,4 +1,4 @@
-import type { Block, KPass, Patient, Resource, ScheduleResponse } from './types'
+import type { Block, Config, KPass, Patient, Resource, ScheduleResponse } from './types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
@@ -104,3 +104,6 @@ export const bookSchedule = (kpassId: number, patientId: number, start: string) 
     patient_id: patientId,
     start,
   })
+
+// Scheduling settings (clinic hours, search horizon)
+export const getConfig = () => request<Config>('/config')

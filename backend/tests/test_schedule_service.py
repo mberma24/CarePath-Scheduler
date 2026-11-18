@@ -1,11 +1,15 @@
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
+from app.config import settings
 from app.db.models import Block, KPass, KPassStep, Patient, Resource
 from app.scheduling.service import (
     ScheduleResult,
+    book_schedule,
     ceil_to_slot,
+    clinic_day_windows,
     default_search_end,
     find_earliest_schedule,
     floor_to_slot,
@@ -162,7 +166,7 @@ def test_fully_blocked_returns_none(db):
     patient = make_patient(db)
     kpass = make_kpass(db, (30, None))
     block(db, utc(0, 0), utc(12, 0, day=19), patient=patient)
-    assert schedule(db, kpass, patient) is None
+    assert schedule(db, kpass, patient) is None  # horizon is 1 day in tests
 
 
 # ---------- Search window ----------
@@ -173,20 +177,106 @@ def test_default_search_end_is_midnight_in_clinic_time():
     assert default_search_end(NOW) == utc(5, 0, day=19)
 
 
-def test_default_window_does_not_spill_past_midnight(db):
-    # Patient is free only 23:30-00:00 New York time (04:30-05:00 UTC).
+def test_default_search_end_counts_horizon_from_the_start_day(monkeypatch):
+    monkeypatch.setattr(settings, "schedule_horizon_days", 7)
+    assert default_search_end(NOW) == utc(5, 0, day=25)
+    assert default_search_end(utc(15, 0, day=20)) == utc(5, 0, day=27)
+
+
+# ---------- Clinic hours (7:00-19:00 New York = 12:00-00:00 UTC in November) ----------
+
+
+def test_never_starts_before_opening(db):
     patient = make_patient(db)
-    block(db, utc(14, 0), utc(4, 30, day=19), patient=patient)
+    kpass = make_kpass(db, (30, None))
+    # 5:00 in New York
+    assert found(db, kpass, patient, now=utc(10, 0)).start_time == utc(12, 0)
+
+
+def test_never_runs_past_closing(db):
+    # Patient is free only 18:30-19:00 New York time (23:30-00:00 UTC).
+    patient = make_patient(db)
+    block(db, utc(14, 0), utc(23, 30), patient=patient)
     assert schedule(db, make_kpass(db, (60, None)), patient) is None
-    assert found(db, make_kpass(db, (30, None)), patient).start_time == utc(4, 30, day=19)
+    assert found(db, make_kpass(db, (30, None)), patient).start_time == utc(23, 30)
+
+
+def test_rolls_over_to_the_next_clinic_day(db, monkeypatch):
+    monkeypatch.setattr(settings, "schedule_horizon_days", 2)
+    patient = make_patient(db)
+    block(db, utc(14, 0), utc(0, 0, day=19), patient=patient)  # rest of today
+    result = found(db, make_kpass(db, (60, None)), patient)
+    assert (result.start_time, result.end_time) == (utc(12, 0, day=19), utc(13, 0, day=19))
+
+
+def test_multi_day_horizon_finds_a_slot_on_day_three(db, monkeypatch):
+    monkeypatch.setattr(settings, "schedule_horizon_days", 7)
+    patient = make_patient(db)
+    doctor = make_resource(db)
+    block(db, utc(14, 0), utc(0, 0, day=21), resource=doctor)  # busy until day 3
+    result = found(db, make_kpass(db, (45, doctor)), patient)
+    assert result.start_time == utc(12, 0, day=21)
+
+
+def test_horizon_of_one_day_does_not_look_further(db):
+    patient = make_patient(db)
+    doctor = make_resource(db)
+    block(db, utc(14, 0), utc(0, 0, day=19), resource=doctor)
+    assert schedule(db, make_kpass(db, (45, doctor)), patient) is None
+
+
+def test_clinic_hours_follow_daylight_saving():
+    # Daylight saving ends Nov 1, 2026: 7:00 New York is 11:00 UTC on Oct 31, 12:00 UTC on Nov 2.
+    windows = clinic_day_windows(
+        datetime(2026, 10, 31, 0, 0, tzinfo=UTC), datetime(2026, 11, 3, 6, 0, tzinfo=UTC)
+    )
+    assert [(s.astimezone(UTC).hour, e.astimezone(UTC).hour) for s, e in windows] == [
+        (11, 23),  # Oct 31 (EDT)
+        (12, 0),  # Nov 1 (EST)
+        (12, 0),  # Nov 2
+    ]
+
+
+def test_kpass_longer_than_a_clinic_day_raises(db):
+    patient = make_patient(db)
+    kpass = make_kpass(db, (12 * 60 + 15, None))
+    with pytest.raises(ValueError, match=r"longer than a clinic day \(720 min\)"):
+        schedule(db, kpass, patient)
 
 
 def test_kpass_longer_than_window_raises(db):
-    # 22:30 in New York leaves 90 minutes until midnight.
+    # 18:00 in New York leaves 60 minutes until closing.
     patient = make_patient(db)
     kpass = make_kpass(db, (60, None), (60, None))
     with pytest.raises(ValueError, match=r"K-pass \(120 min\) is longer than the search window"):
-        schedule(db, kpass, patient, now=utc(3, 30, day=19))
+        schedule(db, kpass, patient, now=utc(23, 0))
+
+
+# ---------- Booking ----------
+
+
+def test_booking_a_start_that_has_passed_books_nothing(db):
+    # 14:00 is before NOW (14:07); the booking must not move to a later time.
+    patient = make_patient(db)
+    kpass = make_kpass(db, (30, None))
+    with pytest.raises(ValueError):
+        book_schedule(db, kpass, patient, utc(14, 0), now=NOW)
+    assert db.scalars(select(Block)).all() == []
+
+
+def test_booking_books_exactly_the_requested_start(db):
+    patient = make_patient(db)
+    kpass = make_kpass(db, (30, None))
+    result = book_schedule(db, kpass, patient, utc(15, 0), now=NOW)
+    assert result is not None and result.start_time == utc(15, 0)
+
+
+def test_booking_outside_clinic_hours_books_nothing(db):
+    patient = make_patient(db)
+    kpass = make_kpass(db, (30, None))
+    with pytest.raises(ValueError):
+        book_schedule(db, kpass, patient, utc(2, 0, day=19), now=NOW)  # 21:00 New York
+    assert db.scalars(select(Block)).all() == []
 
 
 def test_kpass_without_steps_raises(db):

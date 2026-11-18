@@ -37,6 +37,17 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/config")
+    def config() -> dict[str, int | str]:
+        """Scheduling settings the frontend needs, so it never hardcodes them."""
+        return {
+            "slot_minutes": settings.slot_minutes,
+            "schedule_horizon_days": settings.schedule_horizon_days,
+            "clinic_timezone": settings.clinic_timezone,
+            "clinic_open_hour": settings.clinic_open_hour,
+            "clinic_close_hour": settings.clinic_close_hour,
+        }
+
     return app
 
 

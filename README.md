@@ -50,10 +50,24 @@ cp .env.example .env               # VITE_API_BASE_URL=http://localhost:8000
 npm run dev                        # http://localhost:5173
 ```
 
+### Settings
+
+Backend settings come from `backend/.env` (or environment variables):
+
+| Setting                 | Default              | Meaning                                       |
+|-------------------------|----------------------|-----------------------------------------------|
+| `SLOT_MINUTES`          | `15`                 | Scheduling granularity                        |
+| `SCHEDULE_HORIZON_DAYS` | `7`                  | How many calendar days a search covers        |
+| `CLINIC_OPEN_HOUR`      | `7`                  | Earliest appointment time (clinic time)       |
+| `CLINIC_CLOSE_HOUR`     | `19`                 | Appointments must finish by this hour         |
+| `CLINIC_TIMEZONE`       | `America/New_York`   | Timezone for "today" and clinic hours         |
+
+The frontend reads these from `GET /config`.
+
 ### Tests and lint
 
 ```bash
-cd backend && pytest && ruff check .     # 204 tests
+cd backend && pytest && ruff check .     # 215 tests
 cd frontend && npm run lint
 ```
 
@@ -66,11 +80,12 @@ The page has three tabs.
 - **K-passes**: pick a K-pass on the left; edit it on the right. Step changes save
   when you leave a field. Minutes snap to multiples of 15. Use ↑/↓ to reorder.
 - **Schedules**: search for a patient or resource, pick a date, then click or drag over
-  the timeline to block time. A drag stops at an existing block, so blocks never overlap.
+  the timeline (clinic hours only) to block time. A drag stops at an existing block, so blocks never overlap.
   Click × on a block to delete it. Add patients and resources in the panel on the left.
-- **Find earliest**: pick a K-pass, a patient, and a start date/time. The result is shown
-  on a timeline with the resource used for every step. **Next slot** searches again from
-  one slot later; **Schedule** books it.
+- **Find earliest**: pick a K-pass, a patient, and a start date/time. It searches that day
+  and the following days of the horizon (7 by default), within clinic hours. The result
+  shows the day and a timeline with the resource used for every step. **Next slot**
+  searches again from one slot later (same end); **Schedule** books it.
 
 Clicking the selected item in a list again unselects it.
 
@@ -96,23 +111,33 @@ This is a **UI demo only**. The API does not check roles (see
 All times are split into **15-minute slots** (`SLOT_MINUTES`, configurable).
 
 1. **Search window.** From the requested start (never earlier than now) to the requested
-   end. The default is now until midnight in the clinic's timezone. Both ends are
-   rounded to slots. A K-pass longer than the window is rejected with a 422.
-2. **Busy matrix.** One row of 0/1 per slot for the patient (row 0) and one row per
+   end. The default end covers `SCHEDULE_HORIZON_DAYS` **calendar days** in the clinic's
+   timezone, counting the start's day: a 7-day horizon from Nov 18, 6 PM searches Nov 18–24.
+   Both ends are rounded to slots.
+2. **Clinic hours, one day at a time.** Appointments must start and finish between
+   `CLINIC_OPEN_HOUR` and `CLINIC_CLOSE_HOUR` (7 AM–7 PM by default). The service runs the
+   search below once per clinic day, in order, and returns the first day with a slot. Each
+   day's opening and closing times are built in the clinic's timezone and then converted
+   to UTC, so daylight saving changes are handled. Days with too little time left are
+   skipped. A K-pass longer than a clinic day (or than every day's window) is rejected
+   with a 422. `engine.py` is unchanged; the day loop lives in `service.py`.
+3. **Busy matrix.** One row of 0/1 per slot for the patient (row 0) and one row per
    resource the K-pass needs. A block marks every slot it touches as busy; partial
    overlaps round outward, so a 9:10–9:20 block makes 9:00–9:30 busy.
-3. **"Any of type" steps.** Each type gets one combined row that is busy only when
+4. **"Any of type" steps.** Each type gets one combined row that is busy only when
    *every* resource of that type is busy.
-4. **Sliding window.** The engine (`scheduling/engine.py`) slides the K-pass across the
+5. **Sliding window.** The engine (`scheduling/engine.py`) slides the K-pass across the
    matrix, keeping a running count of busy cells, and returns the first offset where the
    patient is free for the whole K-pass and each step's row is free for that step. This
    is O(slots × steps) in the worst case and close to O(slots) in practice.
-5. **Choosing a resource.** For an "any of type" step, the first resource of that type
+6. **Choosing a resource.** For an "any of type" step, the first resource of that type
    that is free for the *whole* step is used. The combined row can say "free" when the
    free doctor changes halfway through a step; in that case the search continues from the
    next slot until one resource covers the whole step.
-6. **Booking** (`POST /schedule/book`) re-runs the search over a window exactly as long
-   as the K-pass, so it succeeds only if that exact slot is still free. It then creates
+7. **Booking** (`POST /schedule/book`) re-runs the search over a window exactly as long
+   as the K-pass, so it succeeds only if that exact slot is still free and inside clinic
+   hours. It also checks explicitly that the result starts at the requested time, so a
+   booking can never land on a different time than the one the user saw. It then creates
    one block for the patient and one per step for that step's resource, **in a single
    transaction**. If the slot was taken in the meantime, it returns a 409.
 
@@ -156,6 +181,7 @@ Interactive docs are at `http://localhost:8000/docs`.
 | GET/PUT/DELETE        | `/blocks/{id}`                        | Read / move / delete a block                    |
 | POST                  | `/schedule`                           | Find the earliest slot                          |
 | POST                  | `/schedule/book`                      | Book a slot found by `/schedule`                |
+| GET                   | `/config`                             | Slot size, search horizon, and clinic hours     |
 | GET                   | `/health`                             | Health check                                    |
 
 ---
@@ -184,7 +210,7 @@ Interactive docs are at `http://localhost:8000/docs`.
 
 - 3 doctors, 2 NMTs, 2 scanners, and 8 patients.
 - The K-passes Bone Scan, Follow-up (any doctor), and Cardiac Stress Test.
-- About 300 blocks over today and the next 2 days, at any time of day: staff lunches,
+- About 300 blocks over today and the next 2 days, within clinic hours: staff lunches,
   random staff and scanner blocks, and patient blocks. No owner gets overlapping blocks
   (tested in `tests/test_seed.py`).
 
@@ -203,10 +229,15 @@ current day.
   timezone.
 - **No migrations.** Tables are created on startup. After a schema change, run
   `python -m app.seed --reset` or delete `kpass_scheduler.db`.
-- **SQLite.** Fine for a demo with one process. Booking does its check and insert in
-  one transaction, but with many concurrent users you would want Postgres and row locking.
-- **Default search** covers one day, which is configurable with `SCHEDULE_HORIZON_DAYS`.
-  The UI searches from a chosen start until the end of that day.
+- **Concurrent bookings.** Booking checks the slot and inserts its blocks in one
+  transaction, and the tests cover booking a slot that was *already* taken. They don't
+  cover two requests booking the same slot at the *same moment*: both could pass the
+  check before either inserts. SQLite makes this unlikely (it serializes writes), but a
+  production system would use Postgres with row locks or an exclusion constraint on
+  block times.
+- **Stale searches.** If a K-pass is edited between Find and Schedule, booking re-checks
+  against the *current* K-pass. A stricter version would reject the booking and ask the
+  user to search again (for example by sending the expected end time).
 
 ## Future work
 

@@ -48,3 +48,11 @@ export interface ScheduleResponse {
   end_time: string | null
   steps: ScheduledStep[]
 }
+
+export interface Config {
+  slot_minutes: number
+  schedule_horizon_days: number
+  clinic_timezone: string
+  clinic_open_hour: number
+  clinic_close_hour: number
+}

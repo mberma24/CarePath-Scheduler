@@ -12,8 +12,12 @@ interface Owner {
   resource_id: number | null
 }
 
-// lockedOwner: someone is signed in (demo roles), so only their own schedule is shown
-export default function SchedulesTab({ lockedOwner }: { lockedOwner?: string }) {
+interface Props {
+  lockedOwner?: string // someone is signed in (demo roles), so only their own schedule is shown
+  hours: [number, number] // clinic open and close hour; the timeline shows only these
+}
+
+export default function SchedulesTab({ lockedOwner, hours }: Props) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [error, setError] = useState('')
@@ -221,6 +225,7 @@ export default function SchedulesTab({ lockedOwner }: { lockedOwner?: string }) 
 
               <Timeline
                 date={date}
+                hours={hours}
                 selection={selection}
                 onSlotPress={pressSlot}
                 onSlotEnter={dragOverSlot}

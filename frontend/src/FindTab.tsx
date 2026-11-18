@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import * as api from './api'
 import Timeline from './Timeline'
-import { SLOT_MINUTES, dayRange, formatTime, isPast, searchMinutes, toDateInput, todayInput, toTimeInput } from './time'
-import type { KPass, Patient, Resource, ScheduleResponse } from './types'
+import { SLOT_MINUTES, addDays, dayRange, formatDay, formatTime, isPast, toDateInput, todayInput, toTimeInput } from './time'
+import type { Config, KPass, Patient, Resource, ScheduleResponse } from './types'
 
-// lockedPatientId: a patient is viewing (demo roles), so they can only search for themselves
-export default function FindTab({ lockedPatientId }: { lockedPatientId?: number }) {
+interface Props {
+  config: Config // clinic hours and search horizon from GET /config
+  lockedPatientId?: number // a patient is viewing (demo roles), so they can only search for themselves
+}
+
+export default function FindTab({ config, lockedPatientId }: Props) {
   const [kpasses, setKPasses] = useState<KPass[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
@@ -29,15 +33,17 @@ export default function FindTab({ lockedPatientId }: { lockedPatientId?: number 
       .catch((e: Error) => setError(e.message))
   }, [])
 
-  // Search from the chosen date/time (never before now) until midnight at the end of that day
+  // Search from the chosen date/time (never before now) through the last day of the horizon,
+  // counted in calendar days: a 7-day horizon from Nov 18 searches Nov 18-24.
+  // The backend keeps every appointment inside clinic hours.
   const chosenStart = new Date(`${date}T${time || '00:00'}`)
-  const searchEnd = dayRange(date).end
-  const minutesLeft = searchMinutes(chosenStart, new Date(searchEnd))
+  const lastDay = addDays(date, config.schedule_horizon_days - 1)
+  const searchEnd = dayRange(lastDay).end
   const dayOver = isPast(searchEnd)
-  const startPassed = !dayOver && isPast(chosenStart.toISOString())
+  const dayMinutes = (config.clinic_close_hour - config.clinic_open_hour) * 60
 
   const kpass = kpasses.find((k) => String(k.id) === kpassId)
-  const tooLong = kpass !== undefined && !dayOver && kpass.total_minutes > minutesLeft
+  const tooLong = kpass !== undefined && kpass.total_minutes > dayMinutes
   const noSteps = kpass !== undefined && kpass.steps.length === 0
 
   const resourceName = (id: number | null) =>
@@ -141,14 +147,17 @@ export default function FindTab({ lockedPatientId }: { lockedPatientId?: number 
           {loading ? 'Searching…' : 'Find earliest'}
         </button>
 
+        <span className="muted">
+          Searches {formatDay(`${date}T12:00`)}
+          {config.schedule_horizon_days > 1 && ` – ${formatDay(`${lastDay}T12:00`)}`}, {config.clinic_open_hour}:00–
+          {config.clinic_close_hour}:00
+        </span>
         {tooLong && (
           <p className="error">
-            {startPassed
-              ? `${formatTime(chosenStart.toISOString())} has already passed. Pick a later time or date.`
-              : `This K-pass takes ${kpass.total_minutes} min, but only ${minutesLeft} min are left that day.`}
+            This K-pass takes {kpass.total_minutes} min, longer than a clinic day ({dayMinutes} min).
           </p>
         )}
-        {dayOver && <p className="error">That day is in the past. Pick today or a later date.</p>}
+        {dayOver && <p className="error">Those days are in the past. Pick today or a later date.</p>}
         {noSteps && <p className="error">This K-pass has no steps.</p>}
         {error && <p className="error">{error}</p>}
       </div>
@@ -156,13 +165,14 @@ export default function FindTab({ lockedPatientId }: { lockedPatientId?: number 
       <div className="panel">
         {!result && <p className="muted">Choose a K-pass and a patient, then search.</p>}
         {result && !result.found && (
-          <p>{searchedNext ? 'No later slot is available that day.' : 'No slot is available for the rest of that day.'}</p>
+          <p>{searchedNext ? 'No later slot is available in the search range.' : 'No slot is available in the search range.'}</p>
         )}
         {result?.found && result.start_time && result.end_time && (
           <>
             <div className="row" style={{ marginBottom: 12 }}>
               <h2 style={{ margin: 0, flex: 1 }}>
-                {searchedNext ? 'Next' : 'Earliest'}: {formatTime(result.start_time)} – {formatTime(result.end_time)}
+                {searchedNext ? 'Next' : 'Earliest'}: {formatDay(result.start_time)}, {formatTime(result.start_time)} –{' '}
+                {formatTime(result.end_time)}
               </h2>
               {booked ? (
                 <span>Scheduled ✓</span>

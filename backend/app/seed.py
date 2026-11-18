@@ -75,8 +75,7 @@ def seed(db: Session, now: datetime) -> None:
         ],
     )
 
-    # Blocks for today and the next 2 days (clinic time). Any time of day can be blocked;
-    # nights are treated like any other time.
+    # Blocks for today and the next 2 days, within clinic hours (clinic time).
     clinic_tz = ZoneInfo(settings.clinic_timezone)
     today = now.astimezone(clinic_tz).date()
 
@@ -102,7 +101,8 @@ def seed(db: Session, now: datetime) -> None:
         while added < count and tries < 50:  # give up on a crowded day instead of looping
             tries += 1
             length = rng.choice(lengths)
-            start = rng.randrange(0, 24 * 60 - length + 1, 15)
+            opens, closes = settings.clinic_open_hour * 60, settings.clinic_close_hour * 60
+            start = rng.randrange(opens, closes - length + 1, 15)
             if add_block(owner, at(day, start), at(day, start + length), rng.choice(reasons)):
                 added += 1
 

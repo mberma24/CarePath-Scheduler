@@ -42,12 +42,16 @@ export function toTimeInput(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-// Minutes in a search window, like the backend: start is never before now and is
-// rounded up to a slot
-export function searchMinutes(start: Date, end: Date): number {
-  const slotMs = SLOT_MINUTES * 60_000
-  const slotStart = Math.ceil(Math.max(start.getTime(), Date.now()) / slotMs) * slotMs
-  return Math.max(0, (end.getTime() - slotStart) / 60_000)
+// "YYYY-MM-DD" plus n calendar days
+export function addDays(dateInput: string, days: number): string {
+  const date = new Date(`${dateInput}T12:00`) // noon, so daylight saving changes can't shift the day
+  date.setDate(date.getDate() + days)
+  return toDateInput(date)
+}
+
+// e.g. "Thu, Nov 20"
+export function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 export function formatTime(iso: string): string {
