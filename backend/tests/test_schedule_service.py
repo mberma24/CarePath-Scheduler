@@ -33,11 +33,20 @@ def make_resource(db, name="Dr. Lee", type="doctor"):
 
 
 def make_kpass(db, *steps):
-    """Each step is a (duration_minutes, resource or None) pair, in order."""
+    """Each step is a (duration_minutes, resource) pair, in order.
+
+    resource is a Resource, a type string (any resource of that type), or None (rest).
+    """
     kpass = KPass(
         name="Test K-pass",
         steps=[
-            KPassStep(position=i, name=f"Step {i}", duration_minutes=minutes, resource=resource)
+            KPassStep(
+                position=i,
+                name=f"Step {i}",
+                duration_minutes=minutes,
+                resource=None if isinstance(resource, str) else resource,
+                resource_type=resource if isinstance(resource, str) else None,
+            )
             for i, (minutes, resource) in enumerate(steps)
         ],
     )
@@ -206,6 +215,92 @@ def test_custom_end_cuts_off_the_search(db):
     kpass = make_kpass(db, (45, None))
     block(db, utc(14, 0), utc(14, 30), patient=patient)
     assert schedule(db, kpass, patient, end=utc(15, 0)) is None
+
+
+# ---------- Any resource of a type ----------
+
+
+def test_type_step_uses_first_free_resource(db):
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    kim = make_resource(db, "Dr. Kim", "doctor")
+    kpass = make_kpass(db, (30, "doctor"))
+    block(db, utc(14, 0), utc(16, 0), resource=lee)
+
+    result = found(db, kpass, patient)
+
+    assert result.start_time == utc(14, 15)
+    assert result.steps[0].resource_id == kim.id
+
+
+def test_type_step_prefers_lowest_id_when_all_free(db):
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    make_resource(db, "Dr. Kim", "doctor")
+    kpass = make_kpass(db, (30, "doctor"))
+
+    assert found(db, kpass, patient).steps[0].resource_id == lee.id
+
+
+def test_type_step_waits_until_any_resource_is_free(db):
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    kim = make_resource(db, "Dr. Kim", "doctor")
+    kpass = make_kpass(db, (30, "doctor"))
+    block(db, utc(14, 0), utc(16, 0), resource=lee)
+    block(db, utc(14, 0), utc(15, 0), resource=kim)
+
+    result = found(db, kpass, patient)
+
+    assert result.start_time == utc(15, 0)
+    assert result.steps[0].resource_id == kim.id
+
+
+def test_type_step_needs_one_resource_for_the_whole_step(db):
+    # Lee is free 14:15-14:30 and Kim 14:30-14:45: every slot has a free doctor,
+    # but no single doctor covers 14:15-14:45, so the step starts once Kim is free for 30 min.
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    kim = make_resource(db, "Dr. Kim", "doctor")
+    kpass = make_kpass(db, (30, "doctor"))
+    block(db, utc(14, 30), utc(18, 0), resource=lee)
+    block(db, utc(14, 0), utc(14, 30), resource=kim)
+
+    result = found(db, kpass, patient)
+
+    assert result.start_time == utc(14, 30)
+    assert result.steps[0].resource_id == kim.id
+
+
+def test_type_step_all_resources_blocked_returns_none(db):
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    kim = make_resource(db, "Dr. Kim", "doctor")
+    kpass = make_kpass(db, (30, "doctor"))
+    block(db, utc(14, 0), utc(16, 0), resource=lee)
+    block(db, utc(14, 0), utc(16, 0), resource=kim)
+
+    assert schedule(db, kpass, patient, end=utc(16, 0)) is None
+
+
+def test_type_with_no_resources_returns_none(db):
+    patient = make_patient(db)
+    kpass = make_kpass(db, (30, "scanner"))
+    assert schedule(db, kpass, patient) is None
+
+
+def test_type_step_mixed_with_specific_resource(db):
+    patient = make_patient(db)
+    lee = make_resource(db, "Dr. Lee", "doctor")
+    sam = make_resource(db, "Sam", "nmt")
+    pat = make_resource(db, "Pat", "nmt")
+    kpass = make_kpass(db, (30, lee), (30, "nmt"))
+    block(db, utc(14, 0), utc(18, 0), resource=sam)
+
+    result = found(db, kpass, patient)
+
+    assert [s.resource_id for s in result.steps] == [lee.id, pat.id]
+    assert result.start_time == utc(14, 15)
 
 
 # ---------- Slot rounding ----------

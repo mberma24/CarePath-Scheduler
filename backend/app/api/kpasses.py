@@ -35,6 +35,16 @@ def ensure_resource_exists(db: Session, resource_id: int | None) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Resource not found")
 
 
+def ensure_resource_type_exists(db: Session, resource_type: str | None) -> None:
+    if (
+        resource_type is not None
+        and db.scalar(select(Resource.id).where(Resource.type == resource_type).limit(1)) is None
+    ):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, f"No resources of type '{resource_type}'"
+        )
+
+
 def renumber_steps(db: Session, steps: list[KPassStep]) -> None:
     """Set positions to 0..n-1 in list order without breaking the unique constraint."""
     # Phase 1: move every step to a unique negative position. These can't collide
@@ -93,6 +103,7 @@ def delete_kpass(kpass_id: int, db: DbSession) -> None:
 def add_step(kpass_id: int, payload: KPassStepCreate, db: DbSession) -> KPass:
     kpass = get_kpass_or_404(db, kpass_id)
     ensure_resource_exists(db, payload.resource_id)
+    ensure_resource_type_exists(db, payload.resource_type)
 
     num_steps = len(kpass.steps)
     index = num_steps if payload.position is None else min(payload.position, num_steps)
@@ -112,6 +123,7 @@ def update_step(kpass_id: int, step_id: int, payload: KPassStepUpdate, db: DbSes
     kpass = get_kpass_or_404(db, kpass_id)
     step = get_step_or_404(db, kpass, step_id)
     ensure_resource_exists(db, payload.resource_id)
+    ensure_resource_type_exists(db, payload.resource_type)
 
     for field, value in payload.model_dump().items():
         setattr(step, field, value)

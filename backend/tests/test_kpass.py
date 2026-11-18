@@ -359,3 +359,57 @@ def test_delete_resource_after_its_step_is_deleted_returns_204(client):
     kpass = add_step(client, create_kpass(client)["id"], "Doctor", resource_id=resource["id"])
     client.delete(f"/kpasses/{kpass['id']}/steps/{kpass['steps'][0]['id']}")
     assert client.delete(f"/resources/{resource['id']}").status_code == 204
+
+
+# ---------- Any resource of a type ----------
+
+
+def test_add_step_with_resource_type(client):
+    create_resource(client, "Dr. Lee", "doctor")
+    kpass = create_kpass(client)
+    body = {"name": "Consult", "duration_minutes": 30, "resource_type": "doctor"}
+
+    response = client.post(f"/kpasses/{kpass['id']}/steps", json=body)
+
+    assert response.status_code == 201, response.text
+    step = response.json()["steps"][0]
+    assert step["resource_type"] == "doctor"
+    assert step["resource_id"] is None
+
+
+def test_add_step_with_resource_id_and_type_returns_422(client):
+    resource = create_resource(client, "Dr. Lee", "doctor")
+    kpass = create_kpass(client)
+    body = {
+        "name": "Consult",
+        "duration_minutes": 30,
+        "resource_id": resource["id"],
+        "resource_type": "doctor",
+    }
+
+    response = client.post(f"/kpasses/{kpass['id']}/steps", json=body)
+
+    assert response.status_code == 422
+
+
+def test_add_step_with_unknown_resource_type_returns_422(client):
+    kpass = create_kpass(client)
+    body = {"name": "Scan", "duration_minutes": 30, "resource_type": "scanner"}
+
+    response = client.post(f"/kpasses/{kpass['id']}/steps", json=body)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "No resources of type 'scanner'"
+
+
+def test_update_step_switches_from_resource_to_type(client):
+    resource = create_resource(client, "Dr. Lee", "doctor")
+    kpass = add_step(client, create_kpass(client)["id"], "Consult", 30, resource["id"])
+    step_id = kpass["steps"][0]["id"]
+    body = {"name": "Consult", "duration_minutes": 30, "resource_type": "doctor"}
+
+    response = client.put(f"/kpasses/{kpass['id']}/steps/{step_id}", json=body)
+
+    assert response.status_code == 200, response.text
+    step = response.json()["steps"][0]
+    assert (step["resource_id"], step["resource_type"]) == (None, "doctor")

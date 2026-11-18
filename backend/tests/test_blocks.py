@@ -134,16 +134,19 @@ def test_list_blocks_filters_by_owner(client):
 
 
 def test_list_blocks_window_returns_overlapping_blocks(client):
-    patient = create_patient(client)
-    pid = patient["id"]
+    # These blocks overlap each other, so each gets its own patient (one owner can't overlap).
+    def block(start, end):
+        pid = create_patient(client, name=f"Patient {start}")["id"]
+        return create_block(client, f"2026-11-18T{start}:00Z", f"2026-11-18T{end}:00Z", pid)
+
     # Window: 10:00-12:00 UTC
-    before = create_block(client, "2026-11-18T08:00:00Z", "2026-11-18T09:00:00Z", pid)
-    touches_start = create_block(client, "2026-11-18T09:00:00Z", "2026-11-18T10:00:00Z", pid)
-    crosses_start = create_block(client, "2026-11-18T09:30:00Z", "2026-11-18T10:30:00Z", pid)
-    inside = create_block(client, "2026-11-18T10:30:00Z", "2026-11-18T11:00:00Z", pid)
-    crosses_end = create_block(client, "2026-11-18T11:30:00Z", "2026-11-18T12:30:00Z", pid)
-    touches_end = create_block(client, "2026-11-18T12:00:00Z", "2026-11-18T13:00:00Z", pid)
-    covers = create_block(client, "2026-11-18T07:00:00Z", "2026-11-18T14:00:00Z", pid)
+    before = block("08:00", "09:00")
+    touches_start = block("09:00", "10:00")
+    crosses_start = block("09:30", "10:30")
+    inside = block("10:30", "11:00")
+    crosses_end = block("11:30", "12:30")
+    touches_end = block("12:00", "13:00")
+    covers = block("07:00", "14:00")
 
     params = {"start": "2026-11-18T10:00:00Z", "end": "2026-11-18T12:00:00Z"}
     ids = block_ids(client.get("/blocks", params=params))
@@ -248,3 +251,70 @@ def test_deleting_resource_deletes_only_its_blocks(client):
     )
     assert client.delete(f"/resources/{doctor['id']}").status_code == 204
     assert block_ids(client.get("/blocks")) == [scanner_block["id"]]
+
+
+# ---------- No overlaps for one owner ----------
+
+
+def test_create_overlapping_block_for_same_owner_returns_409(client):
+    pid = create_patient(client)["id"]
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", pid)
+    body = {
+        "start_time": "2026-11-18T10:30:00Z",
+        "end_time": "2026-11-18T11:30:00Z",
+        "patient_id": pid,
+    }
+
+    response = client.post("/blocks", json=body)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Overlaps an existing block"
+
+
+def test_create_block_inside_existing_block_returns_409(client):
+    rid = create_resource(client)["id"]
+    create_block(client, "2026-11-18T09:00:00Z", "2026-11-18T12:00:00Z", resource_id=rid)
+    body = {
+        "start_time": "2026-11-18T10:00:00Z",
+        "end_time": "2026-11-18T10:15:00Z",
+        "resource_id": rid,
+    }
+
+    assert client.post("/blocks", json=body).status_code == 409
+
+
+def test_back_to_back_blocks_are_allowed(client):
+    pid = create_patient(client)["id"]
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", pid)
+    create_block(client, "2026-11-18T11:00:00Z", "2026-11-18T12:00:00Z", pid)  # asserts 201
+    create_block(client, "2026-11-18T09:00:00Z", "2026-11-18T10:00:00Z", pid)  # asserts 201
+
+
+def test_different_owners_can_overlap(client):
+    lee = create_resource(client, "Dr. Lee")["id"]
+    kim = create_resource(client, "Dr. Kim")["id"]
+    pid = create_patient(client)["id"]
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", resource_id=lee)
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", resource_id=kim)
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", pid)
+
+
+def test_update_block_into_overlap_returns_409(client):
+    pid = create_patient(client)["id"]
+    create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", pid)
+    later = create_block(client, "2026-11-18T12:00:00Z", "2026-11-18T13:00:00Z", pid)
+    body = {"start_time": "2026-11-18T10:30:00Z", "end_time": "2026-11-18T13:00:00Z"}
+
+    response = client.put(f"/blocks/{later['id']}", json=body)
+
+    assert response.status_code == 409
+
+
+def test_update_block_can_overlap_its_own_old_times(client):
+    pid = create_patient(client)["id"]
+    block = create_block(client, "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z", pid)
+    body = {"start_time": "2026-11-18T10:30:00Z", "end_time": "2026-11-18T11:30:00Z"}
+
+    response = client.put(f"/blocks/{block['id']}", json=body)
+
+    assert response.status_code == 200, response.text

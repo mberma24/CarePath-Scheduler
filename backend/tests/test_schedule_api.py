@@ -123,3 +123,76 @@ def test_kpass_longer_than_window_returns_422(client):
 def test_invalid_window_returns_422(client, start, end):
     patient, kpass = make_patient_and_kpass(client, (30, None))
     assert find(client, patient, kpass, start=start, end=end).status_code == 422
+
+
+# ---------- Booking ----------
+
+
+def book(client, patient, kpass, start):
+    body = {"kpass_id": kpass["id"], "patient_id": patient["id"], "start": start}
+    return client.post("/schedule/book", json=body)
+
+
+def test_book_blocks_patient_and_resources(client):
+    doctor = post(client, "/resources", {"name": "Dr. Lee", "type": "doctor"})
+    patient, kpass = make_patient_and_kpass(client, (45, doctor["id"]), (30, None))
+
+    response = book(client, patient, kpass, START)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["end_time"].startswith("2099-01-05T15:15:00")
+    patient_blocks = client.get("/blocks", params={"patient_id": patient["id"]}).json()
+    doctor_blocks = client.get("/blocks", params={"resource_id": doctor["id"]}).json()
+    assert [(b["start_time"][11:16], b["end_time"][11:16]) for b in patient_blocks] == [
+        ("14:00", "15:15")
+    ]
+    assert [(b["start_time"][11:16], b["end_time"][11:16]) for b in doctor_blocks] == [
+        ("14:00", "14:45")
+    ]
+    assert patient_blocks[0]["reason"] == "Bone Scan - Ann"
+
+
+def test_book_then_search_finds_next_free_slot(client):
+    patient, kpass = make_patient_and_kpass(client, (30, None))
+    assert book(client, patient, kpass, START).status_code == 201
+
+    body = find(client, patient, kpass).json()
+
+    assert body["start_time"].startswith("2099-01-05T14:30:00")
+
+
+def test_book_same_slot_twice_returns_409(client):
+    patient, kpass = make_patient_and_kpass(client, (30, None))
+    assert book(client, patient, kpass, START).status_code == 201
+
+    response = book(client, patient, kpass, START)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "That slot is no longer available"
+
+
+def test_book_any_of_type_blocks_the_chosen_resource(client):
+    lee = post(client, "/resources", {"name": "Dr. Lee", "type": "doctor"})
+    kim = post(client, "/resources", {"name": "Dr. Kim", "type": "doctor"})
+    patient = post(client, "/patients", {"name": "Ann"})
+    kpass = post(client, "/kpasses", {"name": "Follow-up"})
+    step = {"name": "Review", "duration_minutes": 30, "resource_type": "doctor"}
+    kpass = post(client, f"/kpasses/{kpass['id']}/steps", step)
+    lee_block = {"resource_id": lee["id"], "start_time": START, "end_time": END}
+    post(client, "/blocks", lee_block)
+
+    response = book(client, patient, kpass, START)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["steps"][0]["resource_id"] == kim["id"]
+    assert len(client.get("/blocks", params={"resource_id": kim["id"]}).json()) == 1
+
+
+def test_book_off_slot_start_returns_422(client):
+    patient, kpass = make_patient_and_kpass(client, (30, None))
+    assert book(client, patient, kpass, "2099-01-05T14:07:00Z").status_code == 422
+
+
+def test_book_missing_kpass_returns_404(client):
+    patient = post(client, "/patients", {"name": "Ann"})
+    assert book(client, patient, {"id": 999}, START).status_code == 404

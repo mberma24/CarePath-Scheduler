@@ -49,6 +49,9 @@ class KPassStep(Base):
     __table_args__ = (
         UniqueConstraint("kpass_id", "position"),
         CheckConstraint("duration_minutes > 0", name="ck_step_positive_duration"),
+        CheckConstraint(
+            "resource_id IS NULL OR resource_type IS NULL", name="ck_step_one_resource_kind"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -56,7 +59,8 @@ class KPassStep(Base):
     position: Mapped[int]
     name: Mapped[str] = mapped_column(String(200))
     duration_minutes: Mapped[int]
-    resource_id: Mapped[int | None] = mapped_column(ForeignKey("resource.id"))  # None = rest
+    resource_id: Mapped[int | None] = mapped_column(ForeignKey("resource.id"))  # one resource
+    resource_type: Mapped[str | None] = mapped_column(String(50))  # or any resource of this type
 
     kpass: Mapped["KPass"] = relationship(back_populates="steps")
     resource: Mapped["Resource | None"] = relationship()

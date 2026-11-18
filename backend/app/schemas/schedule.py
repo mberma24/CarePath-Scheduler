@@ -16,6 +16,12 @@ class ScheduleRequest(BaseModel):
         return self
 
 
+class BookRequest(BaseModel):
+    kpass_id: int
+    patient_id: int
+    start: AwareDatetime  # usually the start_time returned by POST /schedule
+
+
 class ScheduledStepRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

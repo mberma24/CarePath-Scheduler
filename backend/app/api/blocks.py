@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import AwareDatetime
@@ -26,9 +26,34 @@ def ensure_owner_exists(db: Session, patient_id: int | None, resource_id: int | 
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Resource not found")
 
 
+def ensure_no_overlap(
+    db: Session,
+    patient_id: int | None,
+    resource_id: int | None,
+    start: datetime,
+    end: datetime,
+    exclude_id: int | None = None,
+) -> None:
+    """409 if the owner already has a block overlapping [start, end). Back-to-back is fine."""
+    query = select(Block.id).where(
+        Block.patient_id == patient_id
+        if patient_id is not None
+        else Block.resource_id == resource_id,
+        Block.end_time > start.astimezone(UTC),
+        Block.start_time < end.astimezone(UTC),
+    )
+    if exclude_id is not None:
+        query = query.where(Block.id != exclude_id)
+    if db.scalar(query.limit(1)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Overlaps an existing block")
+
+
 @router.post("", response_model=BlockRead, status_code=status.HTTP_201_CREATED)
 def create_block(payload: BlockCreate, db: DbSession) -> Block:
     ensure_owner_exists(db, payload.patient_id, payload.resource_id)
+    ensure_no_overlap(
+        db, payload.patient_id, payload.resource_id, payload.start_time, payload.end_time
+    )
     block = Block(**payload.model_dump())
     db.add(block)
     db.commit()
@@ -68,6 +93,14 @@ def get_block(block_id: int, db: DbSession) -> Block:
 @router.put("/{block_id}", response_model=BlockRead)
 def update_block(block_id: int, payload: BlockUpdate, db: DbSession) -> Block:
     block = get_block_or_404(db, block_id)
+    ensure_no_overlap(
+        db,
+        block.patient_id,
+        block.resource_id,
+        payload.start_time,
+        payload.end_time,
+        exclude_id=block.id,
+    )
     for field, value in payload.model_dump().items():
         setattr(block, field, value)
     db.commit()

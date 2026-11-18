@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.config import settings
 
@@ -10,7 +12,15 @@ class KPassStepBase(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     duration_minutes: int = Field(gt=0, le=MAX_STEP_MINUTES, multiple_of=settings.slot_minutes)
-    resource_id: int | None = None  # None = rest step
+    # Set at most one: a specific resource, or any resource of a type. Neither = rest step.
+    resource_id: int | None = None
+    resource_type: str | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def check_one_resource_kind(self) -> Self:
+        if self.resource_id is not None and self.resource_type is not None:
+            raise ValueError("Set resource_id or resource_type, not both")
+        return self
 
 
 class KPassStepCreate(KPassStepBase):
