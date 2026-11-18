@@ -4,12 +4,13 @@ import Timeline from './Timeline'
 import { SLOT_MINUTES, dayRange, formatTime, isPast, searchMinutes, toDateInput, todayInput, toTimeInput } from './time'
 import type { KPass, Patient, Resource, ScheduleResponse } from './types'
 
-export default function FindTab() {
+// lockedPatientId: a patient is viewing (demo roles), so they can only search for themselves
+export default function FindTab({ lockedPatientId }: { lockedPatientId?: number }) {
   const [kpasses, setKPasses] = useState<KPass[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [kpassId, setKPassId] = useState('')
-  const [patientId, setPatientId] = useState('')
+  const [patientId, setPatientId] = useState(lockedPatientId ? String(lockedPatientId) : '')
   const [result, setResult] = useState<ScheduleResponse | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -98,6 +99,7 @@ export default function FindTab() {
         <select
           className="full"
           value={patientId}
+          disabled={lockedPatientId !== undefined}
           onChange={(e) => {
             setPatientId(e.target.value)
             setResult(null)

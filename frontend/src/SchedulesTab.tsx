@@ -12,7 +12,8 @@ interface Owner {
   resource_id: number | null
 }
 
-export default function SchedulesTab() {
+// lockedOwner: someone is signed in (demo roles), so only their own schedule is shown
+export default function SchedulesTab({ lockedOwner }: { lockedOwner?: string }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [resources, setResources] = useState<Resource[]>([])
   const [error, setError] = useState('')
@@ -22,7 +23,7 @@ export default function SchedulesTab() {
   const [resourceType, setResourceType] = useState('')
 
   const [query, setQuery] = useState('')
-  const [ownerKey, setOwnerKey] = useState('')
+  const [ownerKey, setOwnerKey] = useState(lockedOwner ?? '')
   const [date, setDate] = useState(toDateInput(new Date()))
   const [blocks, setBlocks] = useState<Block[]>([])
 
@@ -152,7 +153,8 @@ export default function SchedulesTab() {
     <div>
       {error && <p className="error">{error}</p>}
 
-      <div className="split">
+      <div className={lockedOwner ? undefined : 'split'}>
+        {!lockedOwner && (
         <div>
           <div className="panel stack">
             <h2>Patients & resources</h2>
@@ -185,10 +187,11 @@ export default function SchedulesTab() {
             </button>
           </div>
         </div>
+        )}
 
         <div className="panel">
           {!owner ? (
-            <p className="muted">Select a patient or resource to see their schedule.</p>
+            <p className="muted">{lockedOwner ? 'Loading…' : 'Select a patient or resource to see their schedule.'}</p>
           ) : (
             <>
               {/* Selection controls share the header row so the timeline never moves mid-drag */}

@@ -66,11 +66,28 @@ The page has three tabs.
 - **K-passes**: pick a K-pass on the left; edit it on the right. Step changes save
   when you leave a field. Minutes snap to multiples of 15. Use ↑/↓ to reorder.
 - **Schedules**: search for a patient or resource, pick a date, then click or drag over
-  the timeline to block time. Click × on a block to delete it. Add patients and resources
-  in the panel on the left.
+  the timeline to block time. A drag stops at an existing block, so blocks never overlap.
+  Click × on a block to delete it. Add patients and resources in the panel on the left.
 - **Find earliest**: pick a K-pass, a patient, and a start date/time. The result is shown
   on a timeline with the resource used for every step. **Next slot** searches again from
   one slot later; **Schedule** books it.
+
+Clicking the selected item in a list again unselects it.
+
+### Viewing as (demo roles)
+
+The **Viewing as** picker in the top right switches between roles. It is searchable and
+scrolls, so it works with many people.
+
+| Role                             | Tabs                                | What they can do                                  |
+|----------------------------------|-------------------------------------|---------------------------------------------------|
+| **Admin** (default)              | K-passes, Schedules, Find earliest  | Everything                                        |
+| **Patient** (e.g. Ann Patel)     | Schedules, Find earliest            | See and block only their own time; find and book times only for themselves |
+| **Staff / equipment** (e.g. Dr. Lee) | K-passes, Schedules, Find earliest | Edit only their own time; create and edit K-passes; find times for any patient |
+
+This is a **UI demo only**. The API does not check roles (see
+[Assumptions and limitations](#assumptions-and-limitations) and
+[Future work](#future-work)).
 
 ---
 
@@ -157,7 +174,9 @@ Interactive docs are at `http://localhost:8000/docs`.
 - **Bookings are just blocks.** A booked appointment is a set of blocks with a reason like
   "Bone Scan - Ann Patel", so the scheduler treats it like any other busy time.
 - **A simple frontend.** No router or state library: one page, three tabs, `useState`,
-  plain `fetch`, and plain CSS.
+  plain `fetch`, and plain CSS. All API calls are in `api.ts`. Two small shared
+  components: `Timeline` (the day view used by Schedules and Find earliest) and
+  `RolePicker` (the searchable "Viewing as" picker).
 
 ## Seed data
 
@@ -174,7 +193,11 @@ current day.
 
 ## Assumptions and limitations
 
-- **No accounts.** Anyone using the app can edit everything (see Future work).
+- **No accounts.** The "Viewing as" switcher in the header shows the role model in the
+  UI only: admins see everything, patients see their own schedule and can find times for
+  themselves, and staff/equipment see their own schedule and can edit K-passes. The API
+  does **not** enforce roles; anyone who calls it directly can do everything (see Future
+  work for the real design).
 - **The browser's timezone.** The frontend shows and picks times in the browser's timezone.
   This matches the backend's clinic-day logic as long as the browser is in the clinic's
   timezone.
