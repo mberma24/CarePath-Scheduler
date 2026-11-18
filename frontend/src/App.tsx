@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import FindTab from './FindTab'
+import KPassesTab from './KPassesTab'
+import SchedulesTab from './SchedulesTab'
 
 type Tab = 'kpasses' | 'schedules' | 'find'
 
@@ -29,9 +32,9 @@ export default function App() {
       </header>
 
       <main>
-        {tab === 'kpasses' && <p>K-pass builder goes here.</p>}
-        {tab === 'schedules' && <p>Schedules and blocks go here.</p>}
-        {tab === 'find' && <p>Find earliest goes here.</p>}
+        {tab === 'kpasses' && <KPassesTab />}
+        {tab === 'schedules' && <SchedulesTab />}
+        {tab === 'find' && <FindTab />}
       </main>
     </div>
   )
