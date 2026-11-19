@@ -1,11 +1,16 @@
 import pytest
 from pydantic import ValidationError
+from pydantic_settings import SettingsConfigDict
 
 from app.config import Settings
 
 
+class SettingsWithoutEnvFile(Settings):
+    model_config = SettingsConfigDict(env_file=None)  # ignore any local .env
+
+
 def make(**overrides):
-    return Settings(_env_file=None, **overrides)  # ignore any local .env
+    return SettingsWithoutEnvFile(**overrides)
 
 
 def test_defaults_are_valid():
